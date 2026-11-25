@@ -21,9 +21,10 @@ class Library(context: Context) {
     private val app = context.applicationContext
     private val prefs = app.getSharedPreferences("library", Context.MODE_PRIVATE)
 
-    var fitWidth: Boolean
-        get() = prefs.getBoolean("fit_width", false)
-        set(v) = prefs.edit().putBoolean("fit_width", v).apply()
+    /** One whole page to a screen, rather than each page as tall as the screen. */
+    var wholePages: Boolean
+        get() = prefs.getBoolean("whole_pages", false)
+        set(v) = prefs.edit().putBoolean("whole_pages", v).apply()
 
     /** Whether Inkwell has asked to see the photos (so it asks once, not every picture). */
     var askedPhotos: Boolean

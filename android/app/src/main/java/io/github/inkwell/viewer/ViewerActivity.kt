@@ -78,14 +78,17 @@ private class FilePages(private val ctx: Context, val items: MutableList<Item>, 
 }
 
 /**
- * Looks through pictures and comics. Tap the sides (or swipe) to turn the
- * page, the middle to show or hide the bars; pinch or double-tap to zoom;
- * hold for the picture's menu. A comic opens where you left it.
+ * Looks through pictures and comics, side by side in a strip you slide
+ * along (StripView). A tap shows or hides the bars and their buttons;
+ * pinch or double-tap to zoom; hold for the picture's menu. A comic opens
+ * where you left it. Edit mode shows the one picture on its own (ZoomView).
  */
-class ViewerActivity : Activity(), ZoomView.Listener {
+class ViewerActivity : Activity(), ZoomView.Listener, StripView.Listener, StripView.Source {
     private lateinit var library: Library
     private lateinit var root: FrameLayout
     private lateinit var zoom: ZoomView
+    private lateinit var strip: StripView
+    private lateinit var actions: LinearLayout
     private lateinit var top: LinearLayout
     private lateinit var bottom: LinearLayout
     private lateinit var titleText: TextView
@@ -107,9 +110,12 @@ class ViewerActivity : Activity(), ZoomView.Listener {
     private var barsShown = false
     private var destroyed = false
 
-    /** The page wanted now; the loader skips pages too far from it. */
+    /** The pages on screen now; the loader skips pages too far from them. */
     @Volatile
-    private var wanted = 0
+    private var wantFrom = 0
+
+    @Volatile
+    private var wantTo = 0
 
     /** Counts up whenever the list changes, so pictures loaded for the old one are dropped. */
     private var generation = 0
@@ -117,7 +123,6 @@ class ViewerActivity : Activity(), ZoomView.Listener {
     // Decoded pages, this one and those either side (main thread only).
     private val cache = HashMap<Int, Picture?>()
     private val loading = HashSet<Int>()
-    private var showFromBottom = false
 
     private var editing: Editing? = null
     private var sliding = false
@@ -134,7 +139,7 @@ class ViewerActivity : Activity(), ZoomView.Listener {
         if (savedInstanceState == null) work.execute { ShareProvider.clear(this) }
         build()
         enterImmersive()
-        showBars(false)
+        showBars(true)
         open(intent, savedInstanceState?.getInt("index", -1) ?: -1)
     }
 
@@ -161,9 +166,14 @@ class ViewerActivity : Activity(), ZoomView.Listener {
     private fun build() {
         root = FrameLayout(this)
         root.setBackgroundColor(android.graphics.Color.BLACK)
+        strip = StripView(this)
+        strip.source = this
+        strip.listener = this
+        strip.wholePages = library.wholePages
+        root.addView(strip, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        // Edit mode's picture, and notes ("Opening…"), on their own.
         zoom = ZoomView(this)
         zoom.listener = this
-        zoom.fitWidth = library.fitWidth
         root.addView(zoom, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
 
         // Where a held-down picture's menu opens from.
@@ -213,8 +223,30 @@ class ViewerActivity : Activity(), ZoomView.Listener {
                 }
             })
         }
+        // What you'd want to do with the picture, as buttons: no hunting for them.
+        actions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+        }
+        for ((key, text) in listOf("edit" to "✎ Edit", "share" to "Share", "delete" to "Delete", "more" to "More")) {
+            actions.addView(Button(this).apply {
+                this.text = text
+                tag = key
+                isAllCaps = false
+                textSize = 15f
+                setOnClickListener {
+                    when (key) {
+                        "edit" -> enterEdit()
+                        "share" -> choose(SHARE)
+                        "delete" -> delete()
+                        "more" -> showMenu(this)
+                    }
+                }
+            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginEnd = dp(4) })
+        }
         bottom.addView(pageLabel)
         bottom.addView(seek)
+        bottom.addView(actions)
         root.addView(bottom, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM))
 
         // Edit mode's tools, along the bottom.
@@ -277,7 +309,10 @@ class ViewerActivity : Activity(), ZoomView.Listener {
     private fun showBars(show: Boolean) {
         barsShown = show
         top.visibility = if (show || editing != null) View.VISIBLE else View.GONE
-        bottom.visibility = if (show && editing == null && (pages?.count ?: 0) > 1) View.VISIBLE else View.GONE
+        bottom.visibility = if (show && editing == null && pages != null) View.VISIBLE else View.GONE
+        val several = (pages?.count ?: 0) > 1
+        seek.visibility = if (several) View.VISIBLE else View.GONE
+        actions.findViewWithTag<View>("delete")?.visibility = if (pages?.item(index) != null) View.VISIBLE else View.GONE
         val system = show || editing != null
         if (Build.VERSION.SDK_INT >= 30) {
             val c = window.decorView.windowInsetsController ?: return
@@ -460,6 +495,7 @@ class ViewerActivity : Activity(), ZoomView.Listener {
             if (saved != null && start == 0) first = saved.page
         }
         seek.layoutDirection = if (rightToLeft) View.LAYOUT_DIRECTION_RTL else View.LAYOUT_DIRECTION_LTR
+        strip.rightToLeft = rightToLeft
         replacePages(p, first)
         if (p.isComic && first > 0) toast("Page ${first + 1} of ${p.count}, where you left off")
     }
@@ -471,7 +507,10 @@ class ViewerActivity : Activity(), ZoomView.Listener {
         cache.clear()
         loading.clear()
         seek.max = (p.count - 1).coerceAtLeast(0)
-        showPage(at.coerceIn(0, (p.count - 1).coerceAtLeast(0)))
+        zoom.show(null)
+        zoom.visibility = View.GONE
+        strip.reset(at.coerceIn(0, (p.count - 1).coerceAtLeast(0)))
+        if (barsShown) showBars(true)
     }
 
     // ---- Turning pages ----
@@ -481,35 +520,38 @@ class ViewerActivity : Activity(), ZoomView.Listener {
         return if (p.isComic) "Page ${i + 1} of ${p.count}" else "${i + 1} of ${p.count} · ${p.name(i)}"
     }
 
-    private fun showPage(i: Int, fromBottom: Boolean = false) {
+    /** Straight to page [i] (the slider, or opening). */
+    private fun showPage(i: Int) {
         val p = pages ?: return
         if (p.count == 0) return
+        strip.jumpTo(i)
+    }
+
+    // StripView.Source
+    override val count get() = pages?.count ?: 0
+    override fun picture(i: Int) = cache[i]
+    override fun failed(i: Int) = cache.containsKey(i) && cache[i] == null
+
+    /** The page in the middle of the screen changed. */
+    override fun onPage(i: Int) {
+        val p = pages ?: return
+        if (i !in 0 until p.count) return
         index = i
-        wanted = i
-        showFromBottom = fromBottom
-        if (!p.isComic) titleText.text = p.name(i)
+        if (!p.isComic && editing == null) titleText.text = p.name(i)
         pageLabel.text = pageText(i)
         seek.progress = i
         if (barsShown) showBars(true)
-        // Only this page and those either side are kept.
-        cache.keys.filter { abs(it - i) > 1 }.forEach { cache.remove(it) }
-        if (cache.containsKey(i)) display(i) else {
-            zoom.show(null, "")
-            request(i)
-        }
-        // The pages either side, ready for a quick turn: the next first.
-        request(i + 1)
-        request(i - 1)
         if (p.isComic) library.setReading(uri.toString(), name, i, p.count)
     }
 
-    private fun display(i: Int) {
-        val picture = cache[i]
-        if (picture == null) {
-            zoom.show(null, "This can't be shown:\nit's damaged, or not a picture Inkwell can read")
-        } else {
-            zoom.show(picture.drawable, fromBottom = showFromBottom)
-        }
+    /** These pages are on screen: loaded, with one more either side ready; the rest let go. */
+    override fun onVisible(from: Int, to: Int) {
+        wantFrom = from - 1
+        wantTo = to + 1
+        cache.keys.filter { it < from - 1 || it > to + 1 }.forEach { cache.remove(it) }
+        for (i in from..to) request(i)
+        request(to + 1)
+        request(from - 1)
     }
 
     private fun request(i: Int) {
@@ -518,55 +560,41 @@ class ViewerActivity : Activity(), ZoomView.Listener {
         loading += i
         val gen = generation
         work.execute {
-            // Flicked past already: not worth decoding.
-            val skip = destroyed || abs(i - wanted) > 1
+            // Slid past already: not worth decoding.
+            val skip = destroyed || i < wantFrom || i > wantTo
             val picture = if (skip) null else {
                 try { p.load(i) } catch (e: OutOfMemoryError) { null } catch (e: Exception) { null }
             }
             runOnUiThread {
                 if (gen != generation) return@runOnUiThread
                 loading -= i
-                if (destroyed || skip || abs(i - index) > 1) return@runOnUiThread
+                if (destroyed || skip || i < wantFrom || i > wantTo) return@runOnUiThread
                 cache[i] = picture
-                if (i == index && editing == null) display(i)
+                strip.pageChanged(i)
             }
         }
     }
 
-    /** On in reading order: down a tall page first, then the next page. */
+    /** On in reading order (keys, slideshow): across a wide page first, then the next page. */
     private fun go(forward: Boolean) {
-        if (zoom.step(forward)) return
-        turn(forward)
-    }
-
-    private fun turn(forward: Boolean): Boolean {
-        val p = pages ?: return false
-        val next = index + if (forward) 1 else -1
-        if (next !in 0 until p.count) {
-            if (p.count > 1 && !sliding) toast(if (forward) "That's the last one" else "That's the first one")
-            return false
+        if (!strip.canGo(forward)) {
+            if ((pages?.count ?: 0) > 1 && !sliding) toast(if (forward) "That's the last one" else "That's the first one")
+            return
         }
-        showPage(next, fromBottom = !forward && library.fitWidth)
-        return true
+        strip.step(forward)
     }
 
-    override fun onTap(across: Float) {
+    override fun onTap() {
         if (sliding) {
             stopSlideshow()
             return
         }
-        when {
-            across < 0.3f -> go(forward = rightToLeft)
-            across > 0.7f -> go(forward = !rightToLeft)
-            else -> showBars(!barsShown)
-        }
+        showBars(!barsShown)
     }
 
-    override fun onSwipe(leftward: Boolean) {
-        stopSlideshow()
-        // Left to right, a swipe to the left is the next page; in manga, to the right.
-        turn(forward = leftward != rightToLeft)
-    }
+    // ZoomView's, in edit mode: a tap there clears the box (ZoomView does it); no page turns.
+    override fun onTap(across: Float) {}
+    override fun onSwipe(leftward: Boolean) {}
 
     override fun onHold(x: Float, y: Float) {
         stopSlideshow()
@@ -594,7 +622,12 @@ class ViewerActivity : Activity(), ZoomView.Listener {
     private val slide = object : Runnable {
         override fun run() {
             if (!sliding) return
-            if (turn(true)) main.postDelayed(this, SLIDE_MS) else stopSlideshow()
+            if (strip.canGo(true)) {
+                strip.step(true)
+                main.postDelayed(this, SLIDE_MS)
+            } else {
+                stopSlideshow()
+            }
         }
     }
 
@@ -629,12 +662,11 @@ class ViewerActivity : Activity(), ZoomView.Listener {
             m.add(0, WALLPAPER, 4, "Set as…")
             if (item != null) m.add(0, DELETE, 5, "Delete")
             if ((p?.count ?: 0) > 1) m.add(0, SLIDESHOW, 6, "Slideshow")
-            m.add(0, ACTUAL, 7, "Actual size")
-            m.add(0, FIT, 8, "Fit to screen")
+            m.add(0, FIT, 8, "Zoom out")
             m.add(0, INFO, 9, "Details")
         }
         if (settings) {
-            m.add(1, FIT_WIDTH, 20, "Fit the width").setCheckable(true).isChecked = library.fitWidth
+            m.add(1, FIT_WIDTH, 20, "Whole pages (one to a screen)").setCheckable(true).isChecked = library.wholePages
             if (p?.isComic == true) m.add(1, RTL, 21, "Right to left (manga)").setCheckable(true).isChecked = rightToLeft
             m.add(1, SCREEN_ON, 22, "Keep the screen on").setCheckable(true).isChecked = library.keepScreenOn
             m.add(1, HIDDEN, 23, "Hide from screenshots and recent apps").setCheckable(true).isChecked = library.hidden
@@ -671,17 +703,17 @@ class ViewerActivity : Activity(), ZoomView.Listener {
             EDIT -> enterEdit()
             DELETE -> delete()
             SLIDESHOW -> startSlideshow()
-            ACTUAL -> actualSize()
-            FIT -> zoom.fit()
+            FIT -> strip.fit()
             INFO -> showInfo()
             FIT_WIDTH -> {
-                library.fitWidth = !library.fitWidth
-                zoom.fitWidth = library.fitWidth
+                library.wholePages = !library.wholePages
+                strip.wholePages = library.wholePages
             }
             RTL -> {
                 rightToLeft = !rightToLeft
                 library.setRightToLeft(uri.toString(), rightToLeft)
                 seek.layoutDirection = if (rightToLeft) View.LAYOUT_DIRECTION_RTL else View.LAYOUT_DIRECTION_LTR
+                strip.rightToLeft = rightToLeft
             }
             SCREEN_ON -> {
                 library.keepScreenOn = !library.keepScreenOn
@@ -753,12 +785,6 @@ class ViewerActivity : Activity(), ZoomView.Listener {
         }
         @Suppress("DEPRECATION")
         startActivityForResult(intent, REQ_SAVE)
-    }
-
-    private fun actualSize() {
-        val picture = cache[index] ?: return
-        val w = picture.drawable.intrinsicWidth
-        if (w > 0) zoom.zoomToPixels(picture.width.toFloat() / w)
     }
 
     private fun showInfo() {
@@ -883,10 +909,16 @@ class ViewerActivity : Activity(), ZoomView.Listener {
     /** Edit mode on, with the picture showing (an animation's frame, as a still). */
     private fun enterEdit() {
         val p = pages ?: return
-        if (editing != null || cache[index] == null) return
+        if (editing != null) return
+        if (cache[index] == null) {
+            toast(if (failed(index)) "This picture can't be edited" else "Still loading: try again in a moment")
+            return
+        }
         stopSlideshow()
         val i = index
         val fileName = fileNameNow()
+        zoom.visibility = View.VISIBLE
+        strip.visibility = View.INVISIBLE
         zoom.show(null, "Getting it ready to edit…")
         work.execute {
             val bmp = p.bytes(i)?.let { Pictures.editable(it) }
@@ -894,7 +926,8 @@ class ViewerActivity : Activity(), ZoomView.Listener {
                 if (destroyed) return@runOnUiThread
                 if (bmp == null) {
                     toast("This picture can't be edited")
-                    display(i)
+                    zoom.visibility = View.GONE
+                    strip.visibility = View.VISIBLE
                     return@runOnUiThread
                 }
                 val e = Editing(bmp, fileName.substringBeforeLast('.'), Editing.isJpegName(fileName))
@@ -995,6 +1028,7 @@ class ViewerActivity : Activity(), ZoomView.Listener {
                             cache.keys.filter { it > index }.forEach { cache.remove(it) }
                             loading.clear()
                             seek.max = files.count - 1
+                            strip.pageChanged(index)
                         }
                         then?.invoke()
                     }
@@ -1026,8 +1060,11 @@ class ViewerActivity : Activity(), ZoomView.Listener {
         editBar.visibility = View.GONE
         titleText.text = pages?.let { if (it.isComic) name else it.name(index) } ?: name
         updateBack()
+        zoom.show(null)
+        zoom.visibility = View.GONE
+        strip.visibility = View.VISIBLE
         showBars(true)
-        if (cache.containsKey(index)) display(index) else request(index)
+        strip.pageChanged(index)
     }
 
     /** Back leaves edit mode (asking about changes) before it leaves the picture. */
@@ -1115,7 +1152,6 @@ class ViewerActivity : Activity(), ZoomView.Listener {
         private const val WALLPAPER = 5
         private const val DELETE = 6
         private const val SLIDESHOW = 7
-        private const val ACTUAL = 8
         private const val FIT = 9
         private const val INFO = 10
         private const val FIT_WIDTH = 20

@@ -35,12 +35,13 @@ and it reads comics the same way.
   Android asks you first). On older Androids, and in folders you added that
   Android has no Recycle Bin for, it asks before deleting for good.
 - **Reading:**
-  - Tap the right or left side to turn the page, or swipe.
-  - Tap the middle to show the bars and the page slider.
-  - Pinch or double-tap to zoom. A zoomed-in page is looked around before a
-    swipe turns it.
-  - *Fit the width* shows tall pages at full width and scrolls down them
-    before turning the page.
+  - Pages sit side by side, each as tall as the screen: slide sideways
+    through them, straight on from one page to the next. A fling glides.
+  - Tap anywhere to show or hide the bars: the page slider, and Edit,
+    Share, Delete and More.
+  - Pinch or double-tap to zoom (then drag up and down too).
+  - *Whole pages* shows one whole page to a screen instead, and any slide
+    goes to the next.
   - *Right to left (manga)* is kept for each comic.
   - A keyboard's arrows, Page Up/Down and Space turn pages too; Delete
     deletes, E edits.
