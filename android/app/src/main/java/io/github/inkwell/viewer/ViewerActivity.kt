@@ -27,7 +27,6 @@ import android.view.WindowInsetsController
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.FrameLayout
-import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.PopupMenu
 import android.widget.SeekBar
@@ -96,7 +95,7 @@ class ViewerActivity : Activity(), ZoomView.Listener, StripView.Listener, StripV
     private lateinit var seek: SeekBar
     private lateinit var menuButton: TextView
     private lateinit var notice: LinearLayout
-    private lateinit var editBar: HorizontalScrollView
+    private lateinit var editBar: LinearLayout
     private lateinit var editButtons: Map<String, Button>
     private lateinit var anchor: View
 
@@ -108,6 +107,9 @@ class ViewerActivity : Activity(), ZoomView.Listener, StripView.Listener, StripV
     private var index = 0
     private var rightToLeft = false
     private var barsShown = false
+
+    /** A picture opened from another app, without the rest of its folder (Inkwell couldn't see it). */
+    private var alone = false
     private var destroyed = false
 
     /** The pages on screen now; the loader skips pages too far from them. */
@@ -139,7 +141,7 @@ class ViewerActivity : Activity(), ZoomView.Listener, StripView.Listener, StripV
         if (savedInstanceState == null) work.execute { ShareProvider.clear(this) }
         build()
         enterImmersive()
-        showBars(true)
+        showBars(!library.barsOff)
         open(intent, savedInstanceState?.getInt("index", -1) ?: -1)
     }
 
@@ -249,30 +251,45 @@ class ViewerActivity : Activity(), ZoomView.Listener, StripView.Listener, StripV
         bottom.addView(actions)
         root.addView(bottom, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM))
 
-        // Edit mode's tools, along the bottom.
-        val tools = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setPadding(dp(4), dp(6), dp(4), dp(6))
-        }
-        val buttons = LinkedHashMap<String, Button>()
-        for ((key, text) in listOf(
-            "undo" to "Undo", "crop" to "Crop", "black" to "Black out", "zoom" to "Zoom to box",
-            "left" to "⟲", "right" to "⟳", "save" to "Save", "done" to "Done",
-        )) {
-            val b = Button(this).apply {
-                this.text = text
-                isAllCaps = false
-                setOnClickListener { editAction(key) }
-            }
-            buttons[key] = b
-            tools.addView(b, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { marginEnd = dp(4) })
-        }
-        editButtons = buttons
-        editBar = HorizontalScrollView(this).apply {
+        // Edit mode's tools, along the bottom: two short rows, all on screen at once.
+        editBar = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
             setBackgroundColor(Ui.bar)
-            addView(tools)
             visibility = View.GONE
         }
+        val buttons = LinkedHashMap<String, Button>()
+        for (row in listOf(
+            listOf("crop" to "Crop", "black" to "Black out", "zoom" to "Zoom", "undo" to "Undo"),
+            listOf("left" to "⟲", "right" to "⟳", "save" to "Save", "done" to "Done"),
+        )) {
+            val line = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(dp(4), dp(2), dp(4), dp(2))
+            }
+            for ((key, text) in row) {
+                val b = Button(this).apply {
+                    this.text = text
+                    isAllCaps = false
+                    textSize = 14f
+                    minHeight = dp(40)
+                    minimumHeight = dp(40)
+                    minWidth = 0
+                    minimumWidth = 0
+                    setPadding(dp(4), 0, dp(4), 0)
+                    contentDescription = when (key) {
+                        "left" -> "Turn left"
+                        "right" -> "Turn right"
+                        "zoom" -> "Zoom to the box"
+                        else -> text
+                    }
+                    setOnClickListener { editAction(key) }
+                }
+                buttons[key] = b
+                line.addView(b, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginEnd = dp(2) })
+            }
+            editBar.addView(line)
+        }
+        editButtons = buttons
         root.addView(editBar, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM))
 
         // A question or note, above the picture's bottom edge.
@@ -435,8 +452,9 @@ class ViewerActivity : Activity(), ZoomView.Listener, StripView.Listener, StripV
                     showBars(true)
                     return@runOnUiThread
                 }
+                alone = lone
                 opened(result, fileName, if (restoreIndex >= 0) restoreIndex else start)
-                if (lone && !Media.canRead(this) && !library.askedPhotos) askForFolder()
+                if (lone) offerFolder(asked = false)
             }
         }
     }
@@ -452,20 +470,64 @@ class ViewerActivity : Activity(), ZoomView.Listener, StripView.Listener, StripV
         return rows.map { Item(it.uri, it.name, it) }.toMutableList() to at
     }
 
-    private fun askForFolder() {
-        showNotice(
-            "See the other pictures in this folder too? Android will ask whether Inkwell may see your photos.",
-            "Not now" to { library.askedPhotos = true },
-            "Allow" to {
-                library.askedPhotos = true
-                requestPermissions(Media.permissions(), REQ_PHOTOS)
-            },
-        )
+    /**
+     * The rest of this picture's folder needs Inkwell to see all your
+     * photos: asks for that (once on its own; again when you [asked] from
+     * the menu). Android 14's "Select photos" only lets Inkwell see the ones
+     * you pick, so then it points you to where "Allow all" is.
+     */
+    private fun offerFolder(asked: Boolean) {
+        when {
+            !Media.canRead(this) -> if (asked || !library.askedPhotos) showNotice(
+                "See the other pictures in this folder too? Android will ask whether Inkwell may see your photos: choose Allow all, so you don't have to pick them.",
+                "Not now" to { library.askedPhotos = true },
+                "Allow" to {
+                    library.askedPhotos = true
+                    requestPermissions(Media.permissions(), REQ_PHOTOS)
+                },
+            )
+            !Media.canReadAll(this) -> if (asked || !library.askedAllPhotos) showNotice(
+                "Inkwell can only see the photos you picked, so it can't show the rest of this folder. " +
+                    "To see whole folders: Settings → Permissions → Photos and videos → Allow all.",
+                "Not now" to { library.askedAllPhotos = true },
+                "Open settings" to {
+                    library.askedAllPhotos = true
+                    openAppSettings()
+                },
+            )
+            asked -> toast("There are no other pictures in this folder that Inkwell can see")
+        }
+    }
+
+    /** Android's page for Inkwell, where its permissions are. */
+    private fun openAppSettings() {
+        try {
+            startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null)))
+        } catch (e: Exception) {
+            toast("Open Android's Settings → Apps → Inkwell")
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Back from Android's settings with all photos allowed: the rest of the folder.
+        if (alone && Media.canReadAll(this)) widenToFolder()
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, results: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, results)
         if (requestCode == REQ_PHOTOS && Media.canRead(this)) widenToFolder()
+        if (requestCode == REQ_PHOTOS && alone && !Media.canReadAll(this)) {
+            if (Media.canRead(this)) {
+                offerFolder(asked = true)
+            } else {
+                showNotice(
+                    "Android didn't let Inkwell see your photos. To see whole folders: Settings → Permissions → Photos and videos → Allow all.",
+                    "Not now" to {},
+                    "Open settings" to { openAppSettings() },
+                )
+            }
+        }
         if (requestCode == REQ_WRITE && results.any { it == PackageManager.PERMISSION_GRANTED }) delete()
     }
 
@@ -477,7 +539,8 @@ class ViewerActivity : Activity(), ZoomView.Listener, StripView.Listener, StripV
         work.execute {
             val siblings = folderOf(item.uri, item.name)
             runOnUiThread {
-                if (destroyed || siblings == null) return@runOnUiThread
+                if (destroyed || siblings == null || pages !== p) return@runOnUiThread
+                alone = false
                 replacePages(FilePages(this, siblings.first), siblings.second)
             }
         }
@@ -589,6 +652,8 @@ class ViewerActivity : Activity(), ZoomView.Listener, StripView.Listener, StripV
             stopSlideshow()
             return
         }
+        // "Keep the bars hidden": taps leave them be; holding a page opens the menu.
+        if (library.barsOff) return
         showBars(!barsShown)
     }
 
@@ -600,7 +665,7 @@ class ViewerActivity : Activity(), ZoomView.Listener, StripView.Listener, StripV
         stopSlideshow()
         anchor.translationX = x
         anchor.translationY = y
-        showMenu(anchor, settings = false)
+        showMenu(anchor)
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
@@ -662,6 +727,7 @@ class ViewerActivity : Activity(), ZoomView.Listener, StripView.Listener, StripV
             m.add(0, WALLPAPER, 4, "Set as…")
             if (item != null) m.add(0, DELETE, 5, "Delete")
             if ((p?.count ?: 0) > 1) m.add(0, SLIDESHOW, 6, "Slideshow")
+            if (alone) m.add(0, WHOLE_FOLDER, 7, "Show the whole folder")
             m.add(0, FIT, 8, "Zoom out")
             m.add(0, INFO, 9, "Details")
         }
@@ -670,6 +736,7 @@ class ViewerActivity : Activity(), ZoomView.Listener, StripView.Listener, StripV
             if (p?.isComic == true) m.add(1, RTL, 21, "Right to left (manga)").setCheckable(true).isChecked = rightToLeft
             m.add(1, SCREEN_ON, 22, "Keep the screen on").setCheckable(true).isChecked = library.keepScreenOn
             m.add(1, HIDDEN, 23, "Hide from screenshots and recent apps").setCheckable(true).isChecked = library.hidden
+            m.add(1, BARS_OFF, 24, "Keep the bars hidden (hold a page for this menu)").setCheckable(true).isChecked = library.barsOff
         }
         if (m.size() == 0) return
         menu.setOnMenuItemClickListener { choose(it.itemId); true }
@@ -703,6 +770,7 @@ class ViewerActivity : Activity(), ZoomView.Listener, StripView.Listener, StripV
             EDIT -> enterEdit()
             DELETE -> delete()
             SLIDESHOW -> startSlideshow()
+            WHOLE_FOLDER -> offerFolder(asked = true)
             FIT -> strip.fit()
             INFO -> showInfo()
             FIT_WIDTH -> {
@@ -722,6 +790,11 @@ class ViewerActivity : Activity(), ZoomView.Listener, StripView.Listener, StripV
             HIDDEN -> {
                 library.hidden = !library.hidden
                 applyPrivacy(library)
+            }
+            BARS_OFF -> {
+                library.barsOff = !library.barsOff
+                showBars(!library.barsOff)
+                if (library.barsOff) toast("Hold a page for the menu")
             }
         }
     }
@@ -1063,7 +1136,7 @@ class ViewerActivity : Activity(), ZoomView.Listener, StripView.Listener, StripV
         zoom.show(null)
         zoom.visibility = View.GONE
         strip.visibility = View.VISIBLE
-        showBars(true)
+        showBars(!library.barsOff)
         strip.pageChanged(index)
     }
 
@@ -1158,5 +1231,7 @@ class ViewerActivity : Activity(), ZoomView.Listener, StripView.Listener, StripV
         private const val RTL = 21
         private const val SCREEN_ON = 22
         private const val HIDDEN = 23
+        private const val BARS_OFF = 24
+        private const val WHOLE_FOLDER = 25
     }
 }

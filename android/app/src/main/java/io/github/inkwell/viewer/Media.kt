@@ -43,6 +43,9 @@ object Media {
     /** Whether Inkwell may see the phone's pictures (all, or some on Android 14's "Select photos"). */
     fun canRead(ctx: Context) = permissions().any { ctx.checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED }
 
+    /** Whether Inkwell may see all the phone's pictures, not just some you picked (whole folders need it). */
+    fun canReadAll(ctx: Context) = ctx.checkSelfPermission(permissions()[0]) == PackageManager.PERMISSION_GRANTED
+
     private fun columns(): Array<String> {
         val cols = mutableListOf(
             MediaStore.Images.ImageColumns._ID,

@@ -31,6 +31,11 @@ class Library(context: Context) {
         get() = prefs.getBoolean("asked_photos", false)
         set(v) = prefs.edit().putBoolean("asked_photos", v).apply()
 
+    /** Whether Inkwell has said it can only see the photos you picked (so it says so once). */
+    var askedAllPhotos: Boolean
+        get() = prefs.getBoolean("asked_all_photos", false)
+        set(v) = prefs.edit().putBoolean("asked_all_photos", v).apply()
+
     /** Kept out of screenshots, screen recording and the recent-apps view. */
     var hidden: Boolean
         get() = prefs.getBoolean("private", true)
@@ -40,9 +45,17 @@ class Library(context: Context) {
         get() = prefs.getBoolean("keep_screen_on", true)
         set(v) = prefs.edit().putBoolean("keep_screen_on", v).apply()
 
-    /** Read right to left (manga), for this comic. */
-    fun rightToLeft(uri: String) = prefs.getBoolean("rtl:$uri", false)
-    fun setRightToLeft(uri: String, on: Boolean) = prefs.edit().putBoolean("rtl:$uri", on).apply()
+    /**
+     * Read right to left (manga), for this comic. Off until you choose;
+     * a comic you haven't chosen for goes the way you chose last.
+     */
+    fun rightToLeft(uri: String) = prefs.getBoolean("rtl:$uri", prefs.getBoolean("rtl_last", false))
+    fun setRightToLeft(uri: String, on: Boolean) = prefs.edit().putBoolean("rtl:$uri", on).putBoolean("rtl_last", on).apply()
+
+    /** The bars stay hidden: a tap doesn't bring them (holding a page opens the menu). */
+    var barsOff: Boolean
+        get() = prefs.getBoolean("bars_off", false)
+        set(v) = prefs.edit().putBoolean("bars_off", v).apply()
 
     fun reading(): List<Reading> {
         val arr = try { JSONArray(prefs.getString("reading", "[]")) } catch (e: Exception) { JSONArray() }

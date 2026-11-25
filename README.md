@@ -36,13 +36,17 @@ and it reads comics the same way.
   Android has no Recycle Bin for, it asks before deleting for good.
 - **Reading:**
   - Pages sit side by side, each as tall as the screen: slide sideways
-    through them, straight on from one page to the next. A fling glides.
+    across a page freely. At its edge the page holds back: push on past a
+    point (or a little, then flick) for the next page; less, and it springs
+    back. A fling stops at the page's edge.
   - Tap anywhere to show or hide the bars: the page slider, and Edit,
-    Share, Delete and More.
+    Share, Delete and More. *Keep the bars hidden* stops taps bringing
+    them; hold a page for the menu (with the same setting, to undo it).
   - Pinch or double-tap to zoom (then drag up and down too).
   - *Whole pages* shows one whole page to a screen instead, and any slide
     goes to the next.
-  - *Right to left (manga)* is kept for each comic.
+  - *Right to left (manga)* is off until you turn it on, and kept for each
+    comic; a comic you haven't chosen for goes the way you chose last.
   - A keyboard's arrows, Page Up/Down and Space turn pages too; Delete
     deletes, E edits.
 
@@ -53,7 +57,9 @@ and it reads comics the same way.
   through Android's own picker or another app's "Open with". It asks to see
   your photos only when you want to swipe through the rest of a folder a
   picture was opened from (or delete one); on Android 14 you can let it see
-  just some.
+  just some, but then it can't show whole folders: it says so, and opens
+  Android's settings for *Allow all* if you want (or ⋮ → *Show the whole
+  folder* later).
 - **Handing a picture on** (Share, Open with, Set as) gives the other app a
   copy of just that picture, which Inkwell clears at its next start.
 - **No backups:** what it keeps (the comics you're reading, your page, the
