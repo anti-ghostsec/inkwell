@@ -45,6 +45,23 @@ jobs:
             -PversionCode="$(git rev-list --count "$GITHUB_SHA")" \
             -PversionName="0.1.0-$(echo "$GITHUB_SHA" | cut -c1-7)" \
             testDebugUnitTest assembleRelease
+          # Inkwell can't reach the internet: no permission for it in the
+          # app as built (whatever the build added), so Android refuses it.
+          perms=$("$ANDROID_HOME/build-tools/36.0.0/aapt2" dump permissions app/build/outputs/apk/release/app-release-unsigned.apk)
+          echo "$perms"
+          if echo "$perms" | grep -E 'android\.permission\.(INTERNET|ACCESS_NETWORK_STATE|ACCESS_WIFI_STATE|CHANGE_NETWORK_STATE)'; then
+            echo "Inkwell must not have network permissions" >&2
+            exit 1
+          fi
+
+      # No logs, no network code: none of it in Inkwell's own code.
+      - name: Privacy check
+        run: |
+          set -eu
+          if grep -rnE 'android\.util\.Log|\bLog\.[vdiwe]\(|printStackTrace|System\.(out|err)|println\(|java\.net\.|javax\.net\.|HttpURLConnection|WebView' android/app/src/main/java; then
+            echo "Inkwell writes no logs and has no network code" >&2
+            exit 1
+          fi
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

@@ -12,8 +12,20 @@ and it reads comics the same way.
   add (`__MACOSX`, `._page.jpg`) are skipped. A page that claims to be small
   but unpacks to more than 256 MB (a "zip bomb") stops there, and only that
   page is affected.
-- **Picks up where you left off.** Every comic you open is listed under
-  *Continue reading*, with how far you've got.
+- **Picks up where you left off**, if you want (it asks the first time;
+  *Remember my page…* in a comic's menu):
+  - *Page only*: your page (and manga or not) is kept under a fingerprint
+    of the comic, made from what's in it and scrambled with a key made on
+    this phone. No names, no addresses, no dates. Open the comic again,
+    from anywhere, renamed or moved, and it's at your page.
+  - *And list*: also lists your comics under *Continue reading* (this
+    keeps their names and where they are).
+  - *Nothing*: nothing is kept; choosing it forgets everything kept.
+
+  A listed comic opened from another
+  app's "Open with" may be one Android lets Inkwell see only that once:
+  then Inkwell finds it in the folders you added, or asks you to find it
+  again (and keeps it from then on).
 - **Pictures:** PNG, JPEG, WebP, GIF, BMP, HEIF and AVIF (as your Android
   version supports them). On Android 9 and newer, animated GIFs and WebPs move
   and photos turn the right way up. Very large photos are shown at a size
@@ -22,6 +34,13 @@ and it reads comics the same way.
   pictures as thumbnails (a comic shows its cover). Swipe through all the
   pictures in a folder, even one opened from another app (Inkwell asks once
   whether it may see your photos for that).
+- **Make comics (`.cbz`)**, as FerroOS's Files does: in a folder you added,
+  *Make a comic* puts its pictures into "Folder.cbz" beside it (inside it,
+  for the folder you added itself); hold a folder for a comic of it, or hold
+  pictures to pick some. The pages go in the order people count (`p2`
+  before `p10`), stored as they are, under their names alone, with no dates
+  or other details. Nothing is overwritten, and the pictures stay where
+  they were.
 - **Hold a picture** for its menu: Share, Open with…, Edit, Save a copy…,
   Set as (wallpaper, contact photo), Delete, Slideshow, Actual size, Fit to
   screen, Details.
@@ -42,9 +61,11 @@ and it reads comics the same way.
   - Tap anywhere to show or hide the bars: the page slider, and Edit,
     Share, Delete and More. *Keep the bars hidden* stops taps bringing
     them; hold a page for the menu (with the same setting, to undo it).
+    Comics and pictures each have their own.
   - Pinch or double-tap to zoom (then drag up and down too).
-  - *Whole pages* shows one whole page to a screen instead, and any slide
-    goes to the next.
+  - Pictures are shown whole, one to a screen, and any slide goes to the
+    next; comics' pages are as tall as the screen. Each has its own
+    setting: *Whole pictures* and *Whole pages*.
   - *Right to left (manga)* is off until you turn it on, and kept for each
     comic; a comic you haven't chosen for goes the way you chose last.
   - A keyboard's arrows, Page Up/Down and Space turn pages too; Delete
@@ -52,7 +73,19 @@ and it reads comics the same way.
 
 ## Privacy
 
-- **No internet:** Inkwell can't go online at all.
+- **No internet:** Inkwell has no permission to go online, so Android
+  won't let it: nothing is sent anywhere, and it never checks for updates.
+  Every release build is checked for that, and for no network code in
+  Inkwell's own code; it uses no libraries.
+- **No logs:** Inkwell writes nothing to the phone's log, not even if it
+  crashes (it just closes, rather than Android writing what went wrong,
+  which could name your files).
+- **Nothing written without asking:** Inkwell keeps your choices (its
+  settings) and the folders you add. Your page in comics is kept only as
+  you choose when it first asks (above): by scrambled fingerprint alone,
+  or with names for *Continue reading*, never with dates or times. Small pictures in a folder are made in memory only.
+  Files are written only when you ask: an edit or a copy you save, a comic
+  you make, or a picture you hand on (below).
 - **Only what you choose:** it sees the files and folders you open with it,
   through Android's own picker or another app's "Open with". It asks to see
   your photos only when you want to swipe through the rest of a folder a
@@ -62,11 +95,13 @@ and it reads comics the same way.
   folder* later).
 - **Handing a picture on** (Share, Open with, Set as) gives the other app a
   copy of just that picture, which Inkwell clears at its next start.
-- **No backups:** what it keeps (the comics you're reading, your page, the
-  folders you added) stays on the phone and isn't put in cloud backups or
+- **No backups:** what it keeps (your settings, the folders you added, and
+  the comics you're reading if you said so) stays on the phone and isn't put in cloud backups or
   device transfers.
 - **Hidden by default:** it's kept out of screenshots, screen recording and
   the recent-apps view. Turn this off in the viewer's ⋮ menu.
+- **Only from apps, not web pages:** a link on a web page can't open
+  Inkwell.
 - **Easy to undo:** hold a comic or folder on the home screen to remove it.
   Inkwell then gives back its permission to read it.
 

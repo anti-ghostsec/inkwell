@@ -52,7 +52,16 @@ class BytesSource(private val bytes: ByteArray) : Source {
  * to storage: each page is unpacked in memory when it's shown. The pages
  * are its pictures in reading order; names are only for sorting and showing.
  */
-class Cbz private constructor(private val src: Source, val pages: List<Page>) : Closeable {
+class Cbz private constructor(
+    private val src: Source,
+    val pages: List<Page>,
+    /**
+     * What tells this comic from others, whatever it's called or wherever it
+     * is: a SHA-256 of its table of contents (each page's name, size and
+     * checksum) and its size. Never stored as it is (Library keys it first).
+     */
+    val id: ByteArray,
+) : Closeable {
     class Page(
         val name: String,
         internal val method: Int,
@@ -220,7 +229,10 @@ class Cbz private constructor(private val src: Source, val pages: List<Page>) : 
             }
             if (pages.isEmpty()) return null
             pages.sortWith { a, b -> Natural.compare(a.name, b.name) }
-            return Cbz(src, pages)
+            val digest = java.security.MessageDigest.getInstance("SHA-256")
+            digest.update(cd)
+            digest.update(ByteBuffer.allocate(8).putLong(src.size).array())
+            return Cbz(src, pages, digest.digest())
         }
 
         private fun le(b: ByteArray): ByteBuffer = ByteBuffer.wrap(b).order(ByteOrder.LITTLE_ENDIAN)

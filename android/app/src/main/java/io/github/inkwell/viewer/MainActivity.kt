@@ -47,7 +47,14 @@ class MainActivity : Activity() {
     private var shown = 0
     private lateinit var thumbs: Thumbs
 
+    /** The folder showing, and what's in it, to show it again without asking Android. */
+    private var lastDocs: List<Doc>? = null
+
+    /** Pictures picked (held) for a comic, by document id. */
+    private val picked = LinkedHashSet<String>()
+
     override fun onCreate(savedInstanceState: Bundle?) {
+        Quiet.install()
         super.onCreate(savedInstanceState)
         library = Library(this)
         thumbs = Thumbs(this, dp(160))
@@ -192,10 +199,20 @@ class MainActivity : Activity() {
                 line = l
                 list.addView(l, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(8) })
             }
+            val pickable = doc.isPicture && Cbz.isPicture(doc.name)
             val cell = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 isClickable = true
-                setOnClickListener { if (doc.isComic) view(doc.uri) else view(doc.uri, level) }
+                setOnClickListener {
+                    when {
+                        picked.isNotEmpty() && pickable -> togglePick(level, doc)
+                        picked.isNotEmpty() -> {}
+                        doc.isComic -> view(doc.uri)
+                        else -> view(doc.uri, level)
+                    }
+                }
+                // Hold pictures to pick them for a comic.
+                if (pickable) setOnLongClickListener { togglePick(level, doc); true }
             }
             val image = SquareImage(this).apply {
                 scaleType = ImageView.ScaleType.CENTER_CROP
@@ -203,9 +220,16 @@ class MainActivity : Activity() {
                 clipToOutline = true
             }
             thumbs.load(image, doc.uri, doc.isComic)
+            if (doc.id in picked) {
+                image.foreground = android.graphics.drawable.GradientDrawable().apply {
+                    cornerRadius = dp(12).toFloat()
+                    setStroke(dp(4), Ui.accent)
+                    setColor(android.graphics.Color.argb(0x50, 0xe0, 0xa0, 0x30))
+                }
+            }
             cell.addView(image, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
             val reading = if (doc.isComic) library.readingOf(doc.uri.toString()) else null
-            cell.addView(label((if (doc.isComic) "📖 " else "") + doc.name, 12f, Ui.dim).apply {
+            cell.addView(label((if (doc.isComic) "📖 " else if (doc.id in picked) "✓ " else "") + doc.name, 12f, if (doc.id in picked) Ui.accent else Ui.dim).apply {
                 maxLines = 2
                 ellipsize = TextUtils.TruncateAt.MIDDLE
                 setPadding(dp(2), dp(4), dp(2), 0)
@@ -287,31 +311,142 @@ class MainActivity : Activity() {
     private fun showFolder(level: Level) {
         list.removeAllViews()
         list.addView(label("Loading…", 15f, Ui.dim).apply { setPadding(dp(4), dp(16), 0, 0) })
+        picked.clear()
+        lastDocs = null
         val ticket = ++shown
         work.execute {
             val docs = try { Files.list(this, level.tree, level.id) } catch (e: Exception) { null }
             runOnUiThread {
                 if (ticket != shown || isDestroyed) return@runOnUiThread
-                list.removeAllViews()
+                lastDocs = docs
+                render(level, docs)
+            }
+        }
+    }
+
+    /** A folder's contents, as [showFolder] found them. */
+    private fun render(level: Level, docs: List<Doc>?) {
+        val y = scroll.scrollY
+        list.removeAllViews()
+        when {
+            docs == null -> list.addView(label("Inkwell can't look in this folder any more. Remove it and add it again.", 15f, Ui.dim).apply {
+                setPadding(dp(4), dp(16), dp(4), 0)
+            })
+            docs.isEmpty() -> list.addView(label("No pictures or comics here.", 15f, Ui.dim).apply {
+                setPadding(dp(4), dp(16), dp(4), 0)
+            })
+            else -> {
+                comicBar(level, docs)
+                for (doc in docs.filter { it.isFolder }) folderRow(level, doc)
+                grid(level, docs.filter { !it.isFolder })
+            }
+        }
+        scroll.post { scroll.scrollTo(0, y) }
+    }
+
+    // ---- Making comics ----
+
+    /**
+     * Above a folder's contents: make a comic of its pictures, or (once
+     * some are picked by holding them) of the ones picked.
+     */
+    private fun comicBar(level: Level, docs: List<Doc>) {
+        val pages = MakeComic.pages(docs)
+        val bar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        val wide = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        if (picked.isNotEmpty()) {
+            val chosen = pages.filter { it.id in picked }
+            bar.addView(button("Make a comic of ${chosen.size} picked") {
+                makeComic(level.tree, level.id, level.title, chosen)
+            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply { marginEnd = dp(8) })
+            bar.addView(button("Cancel") {
+                picked.clear()
+                render(level, lastDocs)
+            })
+        } else if (pages.isNotEmpty()) {
+            bar.addView(button("Make a comic (.cbz) of ${pages.size} picture${if (pages.size == 1) "" else "s"}") {
+                // Beside the folder, as on the computer; a folder you added
+                // has nothing above it Inkwell may write in, so then inside it.
+                val parent = stack.getOrNull(stack.size - 2)?.takeIf { it.tree == level.tree }
+                makeComic(level.tree, parent?.id ?: level.id, level.title, pages)
+            }, wide)
+        } else {
+            return
+        }
+        list.addView(bar, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+            topMargin = dp(4)
+            bottomMargin = dp(4)
+        })
+        list.addView(label(
+            if (picked.isNotEmpty()) "Tap pictures to pick or unpick them." else "Or hold pictures to pick some, or hold a folder for a comic of it.",
+            12f, Ui.dim,
+        ).apply { setPadding(dp(4), 0, dp(4), dp(8)) })
+    }
+
+    private fun togglePick(level: Level, doc: Doc) {
+        if (!picked.remove(doc.id)) picked += doc.id
+        render(level, lastDocs)
+    }
+
+    /** A comic of [folder]'s pictures, beside it in [level]. */
+    private fun comicOfFolder(level: Level, folder: Doc) {
+        val ticket = shown
+        work.execute {
+            val pages = try { MakeComic.pages(Files.list(this, level.tree, folder.id)) } catch (e: Exception) { null }
+            runOnUiThread {
+                if (ticket != shown || isDestroyed) return@runOnUiThread
                 when {
-                    docs == null -> list.addView(label("Inkwell can't look in this folder any more. Remove it and add it again.", 15f, Ui.dim).apply {
-                        setPadding(dp(4), dp(16), dp(4), 0)
-                    })
-                    docs.isEmpty() -> list.addView(label("No pictures or comics here.", 15f, Ui.dim).apply {
-                        setPadding(dp(4), dp(16), dp(4), 0)
-                    })
-                    else -> {
-                        for (doc in docs.filter { it.isFolder }) folderRow(level, doc)
-                        grid(level, docs.filter { !it.isFolder })
-                    }
+                    pages == null -> toast("Inkwell can't look in “${folder.name}”")
+                    pages.isEmpty() -> toast("There are no pictures in “${folder.name}”")
+                    else -> makeComic(level.tree, level.id, folder.name, pages)
                 }
             }
         }
     }
 
+    /** [pages] into "[stem].cbz" in folder [intoId], with how far it's got, and Cancel. */
+    private fun makeComic(tree: Uri, intoId: String, stem: String, pages: List<Doc>) {
+        if (pages.isEmpty()) return
+        val cancelled = java.util.concurrent.atomic.AtomicBoolean(false)
+        val text = label("Making “${MakeComic.safeStem(stem)}.cbz”…", 15f).apply { setPadding(dp(24), dp(20), dp(24), dp(8)) }
+        val dialog = AlertDialog.Builder(this)
+            .setView(text)
+            .setCancelable(false)
+            .setNegativeButton("Cancel") { _, _ -> cancelled.set(true) }
+            .show()
+        val total = pages.size
+        work.execute {
+            val result = runCatching {
+                MakeComic.make(this, tree, intoId, stem, pages, { cancelled.get() }) { n ->
+                    runOnUiThread { text.text = "Making “${MakeComic.safeStem(stem)}.cbz”: $n of $total pictures" }
+                }
+            }
+            runOnUiThread {
+                if (isDestroyed) return@runOnUiThread
+                dialog.dismiss()
+                result.onSuccess { name ->
+                    toast("Made “$name” ($total picture${if (total == 1) "" else "s"}). The pictures are still where they were.")
+                }.onFailure { e ->
+                    if (e !is MakeComic.Cancelled) toast("Couldn't make the comic: ${e.message ?: e.javaClass.simpleName}")
+                }
+                stack.lastOrNull()?.let { showFolder(it) }
+            }
+        }
+    }
+
+    private fun toast(text: String) = android.widget.Toast.makeText(this, text, android.widget.Toast.LENGTH_LONG).show()
+
     private fun folderRow(level: Level, doc: Doc) {
         when {
-            doc.isFolder -> row("📁  ${doc.name}") { open(Level(level.tree, doc.id, doc.name)) }
+            doc.isFolder -> row("📁  ${doc.name}", onLongClick = {
+                AlertDialog.Builder(this)
+                    .setTitle(doc.name)
+                    .setItems(arrayOf("Make a comic (.cbz) of its pictures")) { _, _ -> comicOfFolder(level, doc) }
+                    .show()
+            }) { open(Level(level.tree, doc.id, doc.name)) }
             doc.isComic -> {
                 val r = library.readingOf(doc.uri.toString())
                 if (r != null) {

@@ -58,6 +58,8 @@ private interface Pages {
 }
 
 private class ComicPages(private val cbz: Cbz) : Pages {
+    /** What tells this comic from others (see Cbz.id). */
+    val id get() = cbz.id
     override val count = cbz.pages.size
     override val isComic = true
     override fun name(i: Int) = cbz.pages[i].title
@@ -135,13 +137,15 @@ class ViewerActivity : Activity(), ZoomView.Listener, StripView.Listener, StripV
     private var backCallback: Any? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        Quiet.install()
         super.onCreate(savedInstanceState)
         library = Library(this)
         applyPrivacy(library)
         if (savedInstanceState == null) work.execute { ShareProvider.clear(this) }
         build()
         enterImmersive()
-        showBars(!library.barsOff)
+        // Shown while it opens; then as that kind's setting says (opened).
+        showBars(true)
         open(intent, savedInstanceState?.getInt("index", -1) ?: -1)
     }
 
@@ -171,7 +175,7 @@ class ViewerActivity : Activity(), ZoomView.Listener, StripView.Listener, StripV
         strip = StripView(this)
         strip.source = this
         strip.listener = this
-        strip.wholePages = library.wholePages
+        strip.wholePages = library.wholePictures
         root.addView(strip, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         // Edit mode's picture, and notes ("Opening…"), on their own.
         zoom = ZoomView(this)
@@ -409,9 +413,18 @@ class ViewerActivity : Activity(), ZoomView.Listener, StripView.Listener, StripV
             var start = 0
             var error: String? = null
             var lone = false
+            var lost = false
             val fileName = Files.name(this, target)
             try {
                 val mime = contentResolver.getType(target)
+                // A comic from another app: kept readable (for Continue reading), when that app allows it.
+                if (Files.isComic(fileName, mime) && library.memory.let { it == null || it == Library.Memory.LIST } && intent.flags and Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION != 0) {
+                    try {
+                        contentResolver.takePersistableUriPermission(target, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    } catch (e: SecurityException) {
+                        // Only while it's open, then.
+                    }
+                }
                 if (tree != null && folder != null && !Files.isComic(fileName, mime)) {
                     // A picture in a folder you added: the folder's other pictures either side.
                     val docs = Files.list(this, tree, folder).filter { it.isPicture }
@@ -437,19 +450,32 @@ class ViewerActivity : Activity(), ZoomView.Listener, StripView.Listener, StripV
                     }
                 }
             } catch (e: SecurityException) {
-                error = "Inkwell can't open this any more.\nOpen it again from where it's kept."
+                lost = true
+                error = "Inkwell isn't allowed to open this any more."
             } catch (e: Exception) {
                 error = "This couldn't be opened"
             }
+            // Lost (Android gave Inkwell it for one look only, from another
+            // app's "Open with"): the same file in a folder you added will do.
+            val known = library.readingOf(target.toString())?.name ?: fileName
+            val elsewhere = if (lost && !intent.getBooleanExtra(EXTRA_FOUND, false)) findInFolders(known) else null
             val result = found
             runOnUiThread {
                 if (destroyed) {
                     result?.let { p -> work.execute { p.close() } }
                     return@runOnUiThread
                 }
+                if (elsewhere != null) {
+                    library.moveReading(target.toString(), elsewhere.toString())
+                    val again = Intent(Intent.ACTION_VIEW, elsewhere, this, ViewerActivity::class.java).putExtra(EXTRA_FOUND, true)
+                    setIntent(again)
+                    open(again, -1)
+                    return@runOnUiThread
+                }
                 if (result == null) {
                     zoom.show(null, error ?: "This couldn't be opened")
                     showBars(true)
+                    if (lost) offerFind(target, known)
                     return@runOnUiThread
                 }
                 alone = lone
@@ -458,6 +484,111 @@ class ViewerActivity : Activity(), ZoomView.Listener, StripView.Listener, StripV
             }
         }
     }
+
+    /**
+     * A comic or picture called [name] in the folders you added (looked for
+     * a few folders deep, and only so far), or null.
+     */
+    private fun findInFolders(name: String): Uri? {
+        if (name.isBlank()) return null
+        var seen = 0
+        for (f in library.folders()) {
+            val tree = try { Uri.parse(f.uri) } catch (e: Exception) { continue }
+            val queue = ArrayDeque<Pair<String, Int>>()
+            try {
+                queue.add(DocumentsContract.getTreeDocumentId(tree) to 0)
+            } catch (e: Exception) {
+                continue
+            }
+            while (queue.isNotEmpty() && seen < 20_000) {
+                val (id, depth) = queue.removeFirst()
+                val docs = try { Files.list(this, tree, id) } catch (e: Exception) { continue }
+                for (d in docs) {
+                    seen++
+                    if (!d.isFolder && d.name.equals(name, ignoreCase = true)) return d.uri
+                    if (d.isFolder && depth < 6) queue.add(d.id to depth + 1)
+                }
+            }
+        }
+        return null
+    }
+
+    /** Whole on the screen, or as tall as it: comics and pictures each have their own setting. */
+    private fun whole() = if (pages?.isComic == false) library.wholePictures else library.wholePages
+
+    /** What couldn't be opened, to be found again with Android's picker. */
+    private var finding: Uri? = null
+
+    private fun offerFind(lostUri: Uri, name: String) {
+        finding = lostUri
+        showNotice(
+            "Android let Inkwell see “$name” only the once (it was opened from another app). " +
+                "Find it again, and Inkwell keeps it this time, or add the folder it's in.",
+            "Not now" to {},
+            "Find it…" to {
+                val pick = Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*")
+                    .putExtra(Intent.EXTRA_MIME_TYPES, arrayOf("image/*", "application/vnd.comicbook+zip", "application/x-cbz", "application/zip", "application/octet-stream"))
+                try {
+                    @Suppress("DEPRECATION")
+                    startActivityForResult(pick, REQ_FIND)
+                } catch (e: Exception) {
+                    toast("This phone has no file picker")
+                }
+            },
+        )
+    }
+
+    /** The comic showing's fingerprint (see Cbz.id), or null for pictures. */
+    private fun comicId() = (pages as? ComicPages)?.id
+
+    /** Asked once: what may Inkwell keep about the comics you read? Until then nothing is kept. */
+    private fun askMemory() {
+        showNotice(
+            "Remember your page in comics? “Page only” keeps a scrambled fingerprint of each comic with your page: " +
+                "no names, no addresses, no dates; open it again from anywhere and it's at your page. " +
+                "“And list” also lists them under Continue reading (with their names). On this phone only.",
+            "No" to { setMemory(Library.Memory.OFF) },
+            "And list" to { setMemory(Library.Memory.LIST) },
+            "Page only" to { setMemory(Library.Memory.PLACE) },
+        )
+    }
+
+    private fun chooseMemory() {
+        val choices = arrayOf(Library.Memory.PLACE, Library.Memory.LIST, Library.Memory.OFF)
+        val names = arrayOf(
+            "Page only (a scrambled fingerprint, no names)",
+            "Page, and list under Continue reading (with names)",
+            "Nothing",
+        )
+        AlertDialog.Builder(this)
+            .setTitle("Remember your page in comics")
+            .setSingleChoiceItems(names, choices.indexOf(library.memory)) { d, which ->
+                d.dismiss()
+                setMemory(choices[which])
+            }
+            .show()
+    }
+
+    private fun setMemory(m: Library.Memory) {
+        library.memory = m
+        val p = pages
+        val here = uri
+        if (m != Library.Memory.LIST && here != null) library.forget(here.toString())
+        if (p != null && p.isComic && here != null) {
+            comicId()?.let { library.setPlace(it, index, rightToLeft) }
+            library.setReading(here.toString(), name, index, p.count)
+        }
+        toast(
+            when (m) {
+                Library.Memory.OFF -> "Inkwell keeps nothing about what you read"
+                Library.Memory.PLACE -> "Your page is kept by fingerprint only"
+                Library.Memory.LIST -> "Your page is kept, and listed under Continue reading"
+            },
+        )
+    }
+
+    /** The bars stay hidden: comics and pictures each have their own setting. */
+    private fun barsOff() = if (pages?.isComic == true) library.barsOffComics else library.barsOffPictures
 
     /** The pictures in the folder [target] is in, and where it is among them; null if that can't be seen. */
     private fun folderOf(target: Uri, fileName: String): Pair<MutableList<Item>, Int>? {
@@ -553,14 +684,20 @@ class ViewerActivity : Activity(), ZoomView.Listener, StripView.Listener, StripV
         val key = uri.toString()
         var first = start
         if (p.isComic) {
-            rightToLeft = library.rightToLeft(key)
-            val saved = library.readingOf(key)
-            if (saved != null && start == 0) first = saved.page
+            val id = (p as? ComicPages)?.id
+            rightToLeft = library.rightToLeft(id)
+            // Your page: by fingerprint (wherever the comic is now), or Continue reading's.
+            val saved = id?.let { library.placeOf(it) } ?: library.readingOf(key)?.page
+            if (saved != null && start == 0) first = saved.coerceIn(0, (p.count - 1).coerceAtLeast(0))
         }
         seek.layoutDirection = if (rightToLeft) View.LAYOUT_DIRECTION_RTL else View.LAYOUT_DIRECTION_LTR
         strip.rightToLeft = rightToLeft
+        // Pictures are best seen whole; a comic's pages as tall as the screen (each their own setting).
+        strip.wholePages = if (p.isComic) library.wholePages else library.wholePictures
         replacePages(p, first)
         if (p.isComic && first > 0) toast("Page ${first + 1} of ${p.count}, where you left off")
+        showBars(!barsOff())
+        if (p.isComic && library.memory == null) askMemory()
     }
 
     /** A new or changed list of pictures, showing picture [at]. */
@@ -604,7 +741,10 @@ class ViewerActivity : Activity(), ZoomView.Listener, StripView.Listener, StripV
         pageLabel.text = pageText(i)
         seek.progress = i
         if (barsShown) showBars(true)
-        if (p.isComic) library.setReading(uri.toString(), name, i, p.count)
+        if (p.isComic) {
+            comicId()?.let { library.setPlace(it, i) }
+            library.setReading(uri.toString(), name, i, p.count)
+        }
     }
 
     /** These pages are on screen: loaded, with one more either side ready; the rest let go. */
@@ -653,7 +793,7 @@ class ViewerActivity : Activity(), ZoomView.Listener, StripView.Listener, StripV
             return
         }
         // "Keep the bars hidden": taps leave them be; holding a page opens the menu.
-        if (library.barsOff) return
+        if (barsOff()) return
         showBars(!barsShown)
     }
 
@@ -732,11 +872,17 @@ class ViewerActivity : Activity(), ZoomView.Listener, StripView.Listener, StripV
             m.add(0, INFO, 9, "Details")
         }
         if (settings) {
-            m.add(1, FIT_WIDTH, 20, "Whole pages (one to a screen)").setCheckable(true).isChecked = library.wholePages
+            if (p?.isComic == false) {
+                m.add(1, FIT_WIDTH, 20, "Whole pictures (one to a screen)").setCheckable(true).isChecked = library.wholePictures
+            } else {
+                m.add(1, FIT_WIDTH, 20, "Whole pages (one to a screen)").setCheckable(true).isChecked = library.wholePages
+            }
             if (p?.isComic == true) m.add(1, RTL, 21, "Right to left (manga)").setCheckable(true).isChecked = rightToLeft
             m.add(1, SCREEN_ON, 22, "Keep the screen on").setCheckable(true).isChecked = library.keepScreenOn
             m.add(1, HIDDEN, 23, "Hide from screenshots and recent apps").setCheckable(true).isChecked = library.hidden
-            m.add(1, BARS_OFF, 24, "Keep the bars hidden (hold a page for this menu)").setCheckable(true).isChecked = library.barsOff
+            if (p?.isComic == true) m.add(1, REMEMBER, 26, "Remember my page…")
+            m.add(1, BARS_OFF, 24, if (p?.isComic == true) "Keep the bars hidden in comics (hold a page for this menu)" else "Keep the bars hidden for pictures (hold one for this menu)")
+                .setCheckable(true).isChecked = barsOff()
         }
         if (m.size() == 0) return
         menu.setOnMenuItemClickListener { choose(it.itemId); true }
@@ -774,12 +920,13 @@ class ViewerActivity : Activity(), ZoomView.Listener, StripView.Listener, StripV
             FIT -> strip.fit()
             INFO -> showInfo()
             FIT_WIDTH -> {
-                library.wholePages = !library.wholePages
-                strip.wholePages = library.wholePages
+                // Comics and pictures each keep their own.
+                if (pages?.isComic == false) library.wholePictures = !library.wholePictures else library.wholePages = !library.wholePages
+                strip.wholePages = whole()
             }
             RTL -> {
                 rightToLeft = !rightToLeft
-                library.setRightToLeft(uri.toString(), rightToLeft)
+                library.setRightToLeft(comicId(), index, rightToLeft)
                 seek.layoutDirection = if (rightToLeft) View.LAYOUT_DIRECTION_RTL else View.LAYOUT_DIRECTION_LTR
                 strip.rightToLeft = rightToLeft
             }
@@ -791,10 +938,12 @@ class ViewerActivity : Activity(), ZoomView.Listener, StripView.Listener, StripV
                 library.hidden = !library.hidden
                 applyPrivacy(library)
             }
+            REMEMBER -> chooseMemory()
             BARS_OFF -> {
-                library.barsOff = !library.barsOff
-                showBars(!library.barsOff)
-                if (library.barsOff) toast("Hold a page for the menu")
+                // Comics and pictures each keep their own.
+                if (pages?.isComic == true) library.barsOffComics = !library.barsOffComics else library.barsOffPictures = !library.barsOffPictures
+                showBars(!barsOff())
+                if (barsOff()) toast("Hold a page for the menu")
             }
         }
     }
@@ -1136,7 +1285,7 @@ class ViewerActivity : Activity(), ZoomView.Listener, StripView.Listener, StripV
         zoom.show(null)
         zoom.visibility = View.GONE
         strip.visibility = View.VISIBLE
-        showBars(!library.barsOff)
+        showBars(!barsOff())
         strip.pageChanged(index)
     }
 
@@ -1173,6 +1322,21 @@ class ViewerActivity : Activity(), ZoomView.Listener, StripView.Listener, StripV
         @Suppress("DEPRECATION")
         super.onActivityResult(requestCode, resultCode, data)
         when (requestCode) {
+            REQ_FIND -> {
+                val old = finding
+                finding = null
+                val found = data?.data
+                if (resultCode != RESULT_OK || found == null) return
+                try {
+                    contentResolver.takePersistableUriPermission(found, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                } catch (e: SecurityException) {
+                    // Only this time, then.
+                }
+                if (old != null) library.moveReading(old.toString(), found.toString())
+                val again = Intent(Intent.ACTION_VIEW, found, this, ViewerActivity::class.java)
+                setIntent(again)
+                open(again, -1)
+            }
             REQ_DELETE -> if (resultCode == RESULT_OK) removeShowing(if (Build.VERSION.SDK_INT >= 30) "Moved to the Recycle Bin" else "Deleted")
             REQ_SAVE -> {
                 val bytes = pendingSave
@@ -1211,12 +1375,16 @@ class ViewerActivity : Activity(), ZoomView.Listener, StripView.Listener, StripV
         const val EXTRA_TREE = "io.github.inkwell.viewer.TREE"
         const val EXTRA_FOLDER = "io.github.inkwell.viewer.FOLDER"
 
+        /** Opened where [ViewerActivity.findInFolders] found it: not looked for again. */
+        private const val EXTRA_FOUND = "io.github.inkwell.viewer.FOUND"
+
         private const val SLIDE_MS = 4000L
 
         private const val REQ_PHOTOS = 1
         private const val REQ_DELETE = 2
         private const val REQ_SAVE = 3
         private const val REQ_WRITE = 4
+        private const val REQ_FIND = 5
 
         private const val SHARE = 1
         private const val OPEN_WITH = 2
@@ -1233,5 +1401,6 @@ class ViewerActivity : Activity(), ZoomView.Listener, StripView.Listener, StripV
         private const val HIDDEN = 23
         private const val BARS_OFF = 24
         private const val WHOLE_FOLDER = 25
+        private const val REMEMBER = 26
     }
 }
