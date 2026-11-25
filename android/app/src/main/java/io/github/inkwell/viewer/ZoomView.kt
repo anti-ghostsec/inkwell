@@ -4,7 +4,9 @@ import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.DashPathEffect
 import android.graphics.Paint
+import android.graphics.RectF
 import android.graphics.drawable.Animatable
 import android.graphics.drawable.Drawable
 import android.view.GestureDetector
@@ -23,6 +25,8 @@ import kotlin.math.min
  * look around, fling to glide. A quick sideways swipe turns the page, but
  * only once the picture is at its edge that way, so a zoomed-in page is
  * looked round first.
+ *
+ * In edit mode one finger draws the box instead, and two move the picture.
  */
 class ZoomView(context: Context) : View(context) {
     interface Listener {
@@ -31,6 +35,12 @@ class ZoomView(context: Context) : View(context) {
 
         /** A quick sideways swipe at the picture's edge; [leftward]: the finger went left. */
         fun onSwipe(leftward: Boolean)
+
+        /** Held down: the picture's menu, there. */
+        fun onHold(x: Float, y: Float)
+
+        /** Edit mode: the box drawn (in the picture's pixels), or null for none. */
+        fun onBox(box: RectF?)
     }
 
     var listener: Listener? = null
@@ -40,6 +50,21 @@ class ZoomView(context: Context) : View(context) {
         set(v) {
             field = v
             reset(top = true)
+        }
+
+    /** One finger draws a box (see [Listener.onBox]) rather than moving the picture. */
+    var editing = false
+        set(v) {
+            field = v
+            box = null
+            invalidate()
+        }
+
+    /** The box to show, in the picture's pixels. */
+    var box: RectF? = null
+        set(v) {
+            field = v
+            invalidate()
         }
 
     private var drawable: Drawable? = null
@@ -58,17 +83,39 @@ class ZoomView(context: Context) : View(context) {
         textSize = 16 * density
         textAlign = Paint.Align.CENTER
     }
+    private val boxLight = Paint().apply {
+        style = Paint.Style.STROKE
+        color = Color.WHITE
+        strokeWidth = 2 * density
+    }
+    private val boxDark = Paint().apply {
+        style = Paint.Style.STROKE
+        color = Color.BLACK
+        strokeWidth = 2 * density
+        pathEffect = DashPathEffect(floatArrayOf(6 * density, 6 * density), 0f)
+    }
+    private val boxShade = Paint().apply { color = Color.argb(0x70, 0, 0, 0) }
 
     // Whether the picture was at its left or right edge when the finger went down.
     private var atLeftAtDown = true
     private var atRightAtDown = true
 
-    /** Shows [d] (or, with none, [text]); from its top, or its bottom when going back a page. */
-    fun show(d: Drawable?, text: String? = null, fromBottom: Boolean = false) {
+    // Edit mode: where the box was started, in the picture's pixels.
+    private var boxFrom: Pair<Float, Float>? = null
+    private var boxMoved = false
+    private var lastFocus: Pair<Float, Float>? = null
+
+    /**
+     * Shows [d] (or, with none, [text]); from its top, or its bottom when
+     * going back a page. [keepView]: where you'd zoomed to stays (an edit
+     * of the same picture).
+     */
+    fun show(d: Drawable?, text: String? = null, fromBottom: Boolean = false, keepView: Boolean = false) {
         (drawable as? Animatable)?.stop()
         drawable?.callback = null
         animator?.cancel()
         scroller.forceFinished(true)
+        val sameSize = d != null && d.intrinsicWidth == dw && d.intrinsicHeight == dh
         drawable = d
         message = text
         if (d != null) {
@@ -78,7 +125,12 @@ class ZoomView(context: Context) : View(context) {
             d.callback = this
             (d as? Animatable)?.start()
         }
-        reset(top = !fromBottom)
+        if (keepView && sameSize) {
+            clamp()
+            invalidate()
+        } else {
+            reset(top = !fromBottom)
+        }
     }
 
     override fun verifyDrawable(who: Drawable) = who === drawable || super.verifyDrawable(who)
@@ -90,7 +142,7 @@ class ZoomView(context: Context) : View(context) {
 
     private fun fitScale() = if (width == 0 || height == 0) 1f else min(width / dw.toFloat(), height / dh.toFloat())
 
-    private fun baseScale() = if (width == 0 || height == 0) 1f else if (fitWidth) width / dw.toFloat() else fitScale()
+    private fun baseScale() = if (width == 0 || height == 0) 1f else if (fitWidth && !editing) width / dw.toFloat() else fitScale()
 
     private fun maxScale() = max(baseScale() * 8f, 4f)
 
@@ -100,6 +152,29 @@ class ZoomView(context: Context) : View(context) {
         val h = dh * scale
         tx = (width - w) / 2
         ty = if (h <= height || top) 0f else height - h
+        clamp()
+        invalidate()
+    }
+
+    /** Fitted to the screen again. */
+    fun fit() {
+        animator?.cancel()
+        val target = baseScale()
+        animateZoom(target, width / 2f, height / 2f)
+    }
+
+    /** [factor] of the picture's own pixels to one of the screen's ("Actual size" is 1). */
+    fun zoomToPixels(factor: Float) {
+        animateZoom(factor.coerceIn(min(fitScale(), baseScale()), maxScale()), width / 2f, height / 2f)
+    }
+
+    /** Fills the screen with [r] (in the picture's pixels). */
+    fun zoomTo(r: RectF) {
+        if (r.width() < 1 || r.height() < 1 || width == 0) return
+        val s = min(width / r.width(), height / r.height()).coerceIn(min(fitScale(), baseScale()), maxScale())
+        scale = s
+        tx = width / 2f - r.centerX() * s
+        ty = height / 2f - r.centerY() * s
         clamp()
         invalidate()
     }
@@ -117,7 +192,7 @@ class ZoomView(context: Context) : View(context) {
         ty = if (h <= height) (height - h) / 2 else ty.coerceIn(height - h, 0f)
     }
 
-    private fun zoomTo(target: Float, fx: Float, fy: Float) {
+    private fun zoomAt(target: Float, fx: Float, fy: Float) {
         val s = target.coerceIn(min(fitScale(), baseScale()), maxScale())
         tx = fx - (fx - tx) * (s / scale)
         ty = fy - (fy - ty) * (s / scale)
@@ -132,7 +207,7 @@ class ZoomView(context: Context) : View(context) {
         animator = ValueAnimator.ofFloat(0f, 1f).apply {
             duration = 220
             interpolator = DecelerateInterpolator()
-            addUpdateListener { zoomTo(from + (target - from) * (it.animatedValue as Float), fx, fy) }
+            addUpdateListener { zoomAt(from + (target - from) * (it.animatedValue as Float), fx, fy) }
             start()
         }
     }
@@ -169,6 +244,8 @@ class ZoomView(context: Context) : View(context) {
         }
     }
 
+    private fun toPicture(x: Float, y: Float) = ((x - tx) / scale).coerceIn(0f, dw.toFloat()) to ((y - ty) / scale).coerceIn(0f, dh.toFloat())
+
     override fun onDraw(canvas: Canvas) {
         val d = drawable
         if (d == null) {
@@ -187,6 +264,17 @@ class ZoomView(context: Context) : View(context) {
         canvas.scale(scale, scale)
         d.draw(canvas)
         canvas.restore()
+        val b = box
+        if (editing && b != null) {
+            val r = RectF(tx + b.left * scale, ty + b.top * scale, tx + b.right * scale, ty + b.bottom * scale)
+            // The rest dimmed, so what's in the box stands out.
+            canvas.drawRect(0f, 0f, width.toFloat(), r.top, boxShade)
+            canvas.drawRect(0f, r.bottom, width.toFloat(), height.toFloat(), boxShade)
+            canvas.drawRect(0f, r.top, r.left, r.bottom, boxShade)
+            canvas.drawRect(r.right, r.top, width.toFloat(), r.bottom, boxShade)
+            canvas.drawRect(r, boxLight)
+            canvas.drawRect(r, boxDark)
+        }
     }
 
     override fun computeScroll() {
@@ -201,12 +289,23 @@ class ZoomView(context: Context) : View(context) {
     private val scaling = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
         override fun onScaleBegin(detector: ScaleGestureDetector): Boolean {
             animator?.cancel()
+            lastFocus = detector.focusX to detector.focusY
             return drawable != null
         }
 
         override fun onScale(detector: ScaleGestureDetector): Boolean {
-            zoomTo(scale * detector.scaleFactor, detector.focusX, detector.focusY)
+            // Two fingers move the picture as well as zooming it.
+            lastFocus?.let { (lx, ly) ->
+                tx += detector.focusX - lx
+                ty += detector.focusY - ly
+            }
+            lastFocus = detector.focusX to detector.focusY
+            zoomAt(scale * detector.scaleFactor, detector.focusX, detector.focusY)
             return true
+        }
+
+        override fun onScaleEnd(detector: ScaleGestureDetector) {
+            lastFocus = null
         }
     })
 
@@ -216,10 +315,18 @@ class ZoomView(context: Context) : View(context) {
             val w = dw * scale
             atLeftAtDown = w <= width + 1 || tx >= -1
             atRightAtDown = w <= width + 1 || tx <= width - w + 1
+            boxFrom = if (editing && drawable != null) toPicture(e.x, e.y) else null
+            boxMoved = false
             return true
         }
 
         override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
+            if (editing) {
+                // A tap clears the box.
+                box = null
+                listener?.onBox(null)
+                return true
+            }
             listener?.onTap(if (width > 0) e.x / width else 0.5f)
             return true
         }
@@ -231,8 +338,20 @@ class ZoomView(context: Context) : View(context) {
             return true
         }
 
+        override fun onLongPress(e: MotionEvent) {
+            if (!editing && !scaling.isInProgress) listener?.onHold(e.x, e.y)
+        }
+
         override fun onScroll(e1: MotionEvent?, e2: MotionEvent, dx: Float, dy: Float): Boolean {
-            if (scaling.isInProgress || drawable == null) return false
+            if (scaling.isInProgress || drawable == null || e2.pointerCount > 1) return false
+            val from = boxFrom
+            if (editing && from != null) {
+                val (x, y) = toPicture(e2.x, e2.y)
+                box = RectF(min(from.first, x), min(from.second, y), max(from.first, x), max(from.second, y))
+                boxMoved = true
+                return true
+            }
+            if (editing) return false
             animator?.cancel()
             tx -= dx
             ty -= dy
@@ -242,7 +361,7 @@ class ZoomView(context: Context) : View(context) {
         }
 
         override fun onFling(e1: MotionEvent?, e2: MotionEvent, vx: Float, vy: Float): Boolean {
-            if (scaling.isInProgress || e2.pointerCount > 1) return false
+            if (editing || scaling.isInProgress || e2.pointerCount > 1) return false
             if (abs(vx) > swipeSpeed && abs(vx) > abs(vy) * 1.5f) {
                 if (vx < 0 && atRightAtDown) {
                     listener?.onSwipe(leftward = true)
@@ -266,8 +385,21 @@ class ZoomView(context: Context) : View(context) {
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
         scaling.onTouchEvent(event)
+        // A second finger down: moving and zooming, not drawing.
+        if (event.actionMasked == MotionEvent.ACTION_POINTER_DOWN && editing) {
+            boxFrom = null
+        }
         gestures.onTouchEvent(event)
-        if (event.actionMasked == MotionEvent.ACTION_UP) performClick()
+        if (event.actionMasked == MotionEvent.ACTION_UP) {
+            if (editing && boxMoved) {
+                val b = box
+                // A box too small to mean anything is none.
+                listener?.onBox(if (b != null && b.width() * scale > 8 * density && b.height() * scale > 8 * density) b else null.also { box = null })
+            }
+            boxFrom = null
+            boxMoved = false
+            performClick()
+        }
         return true
     }
 

@@ -25,9 +25,10 @@ class Library(context: Context) {
         get() = prefs.getBoolean("fit_width", false)
         set(v) = prefs.edit().putBoolean("fit_width", v).apply()
 
-    var volumeKeys: Boolean
-        get() = prefs.getBoolean("volume_keys", false)
-        set(v) = prefs.edit().putBoolean("volume_keys", v).apply()
+    /** Whether Inkwell has asked to see the photos (so it asks once, not every picture). */
+    var askedPhotos: Boolean
+        get() = prefs.getBoolean("asked_photos", false)
+        set(v) = prefs.edit().putBoolean("asked_photos", v).apply()
 
     /** Kept out of screenshots, screen recording and the recent-apps view. */
     var hidden: Boolean

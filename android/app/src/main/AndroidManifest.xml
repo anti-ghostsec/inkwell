@@ -1,7 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- No permissions at all: no internet, no storage. Inkwell sees only the
-     files you hand it (Android's file picker, or "Open with" in another app). -->
+<!-- No internet. Inkwell sees the files you hand it (Android's file picker,
+     or "Open with" in another app), and folders you add; the photos
+     permission only once you ask to swipe through the rest of a folder a
+     picture was opened from. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <!-- Android 14 on: "Select photos" (only some) works too. -->
+    <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <!-- Android 9 and older: deleting, and saving an edit next to the original. -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
     <application
         android:label="Inkwell"
         android:icon="@mipmap/icon"
@@ -57,5 +65,12 @@
                 <data android:mimeType="application/x-cbz" />
             </intent-filter>
         </activity>
+        <!-- Pictures handed to other apps (Share, Open with, Set as wallpaper):
+             copies in Inkwell's cache, readable only by the app given each. -->
+        <provider
+            android:name=".ShareProvider"
+            android:authorities="io.github.inkwell.viewer.share"
+            android:exported="false"
+            android:grantUriPermissions="true" />
     </application>
 </manifest>

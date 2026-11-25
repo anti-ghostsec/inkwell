@@ -13,6 +13,7 @@ import android.text.TextUtils
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.ScrollView
@@ -44,10 +45,14 @@ class MainActivity : Activity() {
     private val stack = ArrayList<Level>()
     private var backCallback: Any? = null
     private var shown = 0
+    private lateinit var thumbs: Thumbs
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         library = Library(this)
+        thumbs = Thumbs(this, dp(160))
+        // Copies handed to other apps last time aren't kept.
+        if (savedInstanceState == null) work.execute { ShareProvider.clear(this) }
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Ui.background)
@@ -89,6 +94,7 @@ class MainActivity : Activity() {
 
     override fun onDestroy() {
         work.shutdown()
+        thumbs.close()
         super.onDestroy()
     }
 
@@ -139,15 +145,29 @@ class MainActivity : Activity() {
     }
 
     /** A row: a line in bold, maybe a second one, and a bar for how far you've read. */
-    private fun row(main: String, detail: String? = null, progress: Pair<Int, Int>? = null, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
-        val box = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
+    private fun row(main: String, detail: String? = null, progress: Pair<Int, Int>? = null, cover: Uri? = null, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
+        val outer = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
             background = panel()
-            setPadding(dp(14), dp(12), dp(14), dp(12))
+            setPadding(dp(10), dp(10), dp(14), dp(10))
             isClickable = true
             setOnClickListener { onClick() }
             if (onLongClick != null) setOnLongClickListener { onLongClick(); true }
         }
+        if (cover != null) {
+            val image = ImageView(this).apply {
+                scaleType = ImageView.ScaleType.CENTER_CROP
+                setBackgroundColor(Ui.background)
+            }
+            thumbs.load(image, cover, comic = true)
+            outer.addView(image, LinearLayout.LayoutParams(dp(48), dp(68)).apply { marginEnd = dp(12) })
+        }
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(if (cover == null) dp(4) else 0, dp(2), 0, dp(2))
+        }
+        outer.addView(box, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         box.addView(label(main, 16f).apply {
             maxLines = 2
             ellipsize = TextUtils.TruncateAt.MIDDLE
@@ -160,7 +180,55 @@ class MainActivity : Activity() {
                 progressTintList = ColorStateList.valueOf(Ui.accent)
             }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(6)).apply { topMargin = dp(8) })
         }
-        list.addView(box, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(8) })
+        list.addView(outer, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(8) })
+    }
+
+    /** Comics and pictures as a grid of small pictures, three across. */
+    private fun grid(level: Level, docs: List<Doc>) {
+        var line: LinearLayout? = null
+        docs.forEachIndexed { i, doc ->
+            if (i % 3 == 0) {
+                val l = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+                line = l
+                list.addView(l, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(8) })
+            }
+            val cell = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                isClickable = true
+                setOnClickListener { if (doc.isComic) view(doc.uri) else view(doc.uri, level) }
+            }
+            val image = SquareImage(this).apply {
+                scaleType = ImageView.ScaleType.CENTER_CROP
+                background = panel()
+                clipToOutline = true
+            }
+            thumbs.load(image, doc.uri, doc.isComic)
+            cell.addView(image, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+            val reading = if (doc.isComic) library.readingOf(doc.uri.toString()) else null
+            cell.addView(label((if (doc.isComic) "📖 " else "") + doc.name, 12f, Ui.dim).apply {
+                maxLines = 2
+                ellipsize = TextUtils.TruncateAt.MIDDLE
+                setPadding(dp(2), dp(4), dp(2), 0)
+            })
+            if (reading != null) {
+                cell.addView(label("Page ${reading.page + 1} of ${reading.pages}", 11f, Ui.accent).apply { setPadding(dp(2), 0, dp(2), 0) })
+            }
+            line?.addView(cell, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                marginEnd = if (i % 3 == 2) 0 else dp(8)
+            })
+        }
+        // The last line's empty places keep the others' width.
+        val rest = (3 - docs.size % 3) % 3
+        repeat(rest) { n ->
+            line?.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f).apply { marginEnd = if (n == rest - 1) 0 else dp(8) })
+        }
+    }
+
+    /** A picture as tall as it is wide. */
+    private class SquareImage(context: android.content.Context) : ImageView(context) {
+        override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+            super.onMeasure(widthMeasureSpec, widthMeasureSpec)
+        }
     }
 
     private fun showHome() {
@@ -175,7 +243,7 @@ class MainActivity : Activity() {
         if (reading.isNotEmpty()) {
             section("Continue reading")
             for (r in reading) {
-                row(r.name, "Page ${r.page + 1} of ${r.pages}", (r.page + 1) to r.pages, onLongClick = {
+                row(r.name, "Page ${r.page + 1} of ${r.pages}", (r.page + 1) to r.pages, cover = Uri.parse(r.uri), onLongClick = {
                     confirm("Remove “${r.name}” from this list?", "Remove") {
                         library.forget(r.uri)
                         refresh()
@@ -232,7 +300,10 @@ class MainActivity : Activity() {
                     docs.isEmpty() -> list.addView(label("No pictures or comics here.", 15f, Ui.dim).apply {
                         setPadding(dp(4), dp(16), dp(4), 0)
                     })
-                    else -> for (doc in docs) folderRow(level, doc)
+                    else -> {
+                        for (doc in docs.filter { it.isFolder }) folderRow(level, doc)
+                        grid(level, docs.filter { !it.isFolder })
+                    }
                 }
             }
         }
@@ -282,7 +353,10 @@ class MainActivity : Activity() {
 
     private fun pickFolder() {
         @Suppress("DEPRECATION")
-        startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), PICK_FOLDER)
+        // Write too: deleting pictures, and saving edits next to them.
+        startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).addFlags(
+            Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION,
+        ), PICK_FOLDER)
     }
 
     @Deprecated("The plain Activity way; Inkwell uses no AndroidX")
@@ -296,9 +370,17 @@ class MainActivity : Activity() {
         val keep = requestCode == PICK_FOLDER || Files.isComic(Files.name(this, uri), contentResolver.getType(uri))
         if (keep) {
             try {
-                contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                if (requestCode == PICK_FOLDER) {
+                    contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                } else {
+                    contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
             } catch (e: SecurityException) {
-                // Only this time, then.
+                try {
+                    contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                } catch (e2: SecurityException) {
+                    // Only this time, then.
+                }
             }
         }
         when (requestCode) {

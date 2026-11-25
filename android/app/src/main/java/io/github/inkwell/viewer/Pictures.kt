@@ -2,6 +2,7 @@ package io.github.inkwell.viewer
 
 import android.content.ContentResolver
 import android.content.res.Resources
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.ImageDecoder
 import android.graphics.drawable.BitmapDrawable
@@ -59,6 +60,38 @@ object Pictures {
         }
     }
 
+    /**
+     * A picture to edit: a still you can change (an animation's first
+     * frame), at most [MAX_PIXELS], drawn at its own pixels' size.
+     */
+    fun editable(bytes: ByteArray): Bitmap? = try {
+        val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)
+        if (opts.outWidth <= 0) {
+            null
+        } else {
+            val bmp = if (Build.VERSION.SDK_INT >= 28) {
+                ImageDecoder.decodeBitmap(ImageDecoder.createSource(ByteBuffer.wrap(bytes))) { decoder, info, _ ->
+                    decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+                    decoder.isMutableRequired = true
+                    val s = sample(info.size.width, info.size.height)
+                    if (s > 1) decoder.setTargetSampleSize(s)
+                }
+            } else {
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply {
+                    inSampleSize = sample(opts.outWidth, opts.outHeight)
+                    inMutable = true
+                })
+            }
+            bmp?.let { if (it.config == Bitmap.Config.ARGB_8888 && it.isMutable) it else it.copy(Bitmap.Config.ARGB_8888, true) }
+                ?.also { it.density = Bitmap.DENSITY_NONE }
+        }
+    } catch (e: Exception) {
+        null
+    } catch (e: OutOfMemoryError) {
+        null
+    }
+
     /** Android 8: still pictures (an animation shows its first frame). */
     private fun legacy(open: () -> InputStream): Picture? = try {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
@@ -68,6 +101,7 @@ object Pictures {
         } else {
             val opts = BitmapFactory.Options().apply { inSampleSize = sample(bounds.outWidth, bounds.outHeight) }
             open().use { BitmapFactory.decodeStream(it, null, opts) }?.let {
+                it.density = Bitmap.DENSITY_NONE
                 val d = BitmapDrawable(Resources.getSystem(), it)
                 d.isFilterBitmap = true
                 Picture(d, bounds.outWidth, bounds.outHeight)

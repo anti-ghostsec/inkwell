@@ -18,8 +18,22 @@ and it reads comics the same way.
   version supports them). On Android 9 and newer, animated GIFs and WebPs move
   and photos turn the right way up. Very large photos are shown at a size
   Android can draw.
-- **Folders:** add a folder and browse its folders, comics and pictures. Swipe
-  through all the pictures in a folder.
+- **Folders:** add a folder and browse it: its folders, then its comics and
+  pictures as thumbnails (a comic shows its cover). Swipe through all the
+  pictures in a folder, even one opened from another app (Inkwell asks once
+  whether it may see your photos for that).
+- **Hold a picture** for its menu: Share, Open with…, Edit, Save a copy…,
+  Set as (wallpaper, contact photo), Delete, Slideshow, Actual size, Fit to
+  screen, Details.
+- **Edit**, as on FerroOS: drag to draw a box, then Crop to it, Black it out
+  (what was under it is gone from the copy, not hidden) or Zoom to it; turn
+  the picture a quarter either way; Undo step by step. Save writes a new
+  file next to the original ("photo-edited.jpg"), with only the pixels: no
+  location, camera or other details from the original. The original is
+  never changed.
+- **Delete** puts the picture in Android's Recycle Bin (Android 11 and newer;
+  Android asks you first). On older Androids, and in folders you added that
+  Android has no Recycle Bin for, it asks before deleting for good.
 - **Reading:**
   - Tap the right or left side to turn the page, or swipe.
   - Tap the middle to show the bars and the page slider.
@@ -28,14 +42,19 @@ and it reads comics the same way.
   - *Fit the width* shows tall pages at full width and scrolls down them
     before turning the page.
   - *Right to left (manga)* is kept for each comic.
-  - Volume keys can turn pages, and so can a keyboard's arrows, Page Up/Down
-    and Space.
+  - A keyboard's arrows, Page Up/Down and Space turn pages too; Delete
+    deletes, E edits.
 
 ## Privacy
 
-- **No internet:** Inkwell asks for no permissions at all.
-- **Only what you choose:** it sees only the files and folders you open with
-  it, through Android's own picker or another app's "Open with".
+- **No internet:** Inkwell can't go online at all.
+- **Only what you choose:** it sees the files and folders you open with it,
+  through Android's own picker or another app's "Open with". It asks to see
+  your photos only when you want to swipe through the rest of a folder a
+  picture was opened from (or delete one); on Android 14 you can let it see
+  just some.
+- **Handing a picture on** (Share, Open with, Set as) gives the other app a
+  copy of just that picture, which Inkwell clears at its next start.
 - **No backups:** what it keeps (the comics you're reading, your page, the
   folders you added) stays on the phone and isn't put in cloud backups or
   device transfers.
