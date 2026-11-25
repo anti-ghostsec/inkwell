@@ -1,4 +1,4 @@
-# Glint
+# Inkwell
 
 A picture and comic book viewer for Android: quick, private, and good at
 `.cbz` comics. It's the Android version of FerroOS's viewer (`ferro-viewer`),
@@ -33,7 +33,7 @@ and it reads comics the same way.
 
 ## Privacy
 
-- **No internet:** Glint asks for no permissions at all.
+- **No internet:** Inkwell asks for no permissions at all.
 - **Only what you choose:** it sees only the files and folders you open with
   it, through Android's own picker or another app's "Open with".
 - **No backups:** what it keeps (the comics you're reading, your page, the
@@ -42,11 +42,11 @@ and it reads comics the same way.
 - **Hidden by default:** it's kept out of screenshots, screen recording and
   the recent-apps view. Turn this off in the viewer's ⋮ menu.
 - **Easy to undo:** hold a comic or folder on the home screen to remove it.
-  Glint then gives back its permission to read it.
+  Inkwell then gives back its permission to read it.
 
 ## Install
 
-Download `glint-android.apk` from the
+Download `inkwell-android.apk` from the
 [latest release](../../releases/latest) and open it. Android asks once
 whether to allow installing apps from your browser or file manager. One APK
 works on every phone and tablet with Android 8 or newer.
@@ -58,7 +58,7 @@ build is signed with the same key, so an update installs over the last one.
 
 ```bash
 cd android
-./gradlew testReleaseUnitTest assembleRelease
+./gradlew testDebugUnitTest assembleRelease
 ```
 
 This needs the Android SDK (platform 36) and JDK 21. Every push to `main` is

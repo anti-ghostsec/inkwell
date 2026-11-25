@@ -12,5 +12,5 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
-rootProject.name = "glint-android"
+rootProject.name = "inkwell-android"
 include(":app")

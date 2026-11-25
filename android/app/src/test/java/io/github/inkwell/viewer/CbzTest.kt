@@ -1,4 +1,4 @@
-package io.github.glint.viewer
+package io.github.inkwell.viewer
 
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals

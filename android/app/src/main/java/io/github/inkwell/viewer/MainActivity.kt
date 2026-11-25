@@ -1,4 +1,4 @@
-package io.github.glint.viewer
+package io.github.inkwell.viewer
 
 import android.app.Activity
 import android.app.AlertDialog
@@ -19,16 +19,16 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.window.OnBackInvokedCallback
 import android.window.OnBackInvokedDispatcher
-import io.github.glint.viewer.Ui.applyPrivacy
-import io.github.glint.viewer.Ui.button
-import io.github.glint.viewer.Ui.dp
-import io.github.glint.viewer.Ui.label
-import io.github.glint.viewer.Ui.onInsets
-import io.github.glint.viewer.Ui.panel
+import io.github.inkwell.viewer.Ui.applyPrivacy
+import io.github.inkwell.viewer.Ui.button
+import io.github.inkwell.viewer.Ui.dp
+import io.github.inkwell.viewer.Ui.label
+import io.github.inkwell.viewer.Ui.onInsets
+import io.github.inkwell.viewer.Ui.panel
 import java.util.concurrent.Executors
 
 /**
- * Glint's home: the comics you're reading (each opens where you left off),
+ * Inkwell's home: the comics you're reading (each opens where you left off),
  * the folders you added, and a way to open anything else. Inside a folder:
  * its folders, comics and pictures.
  */
@@ -63,7 +63,7 @@ class MainActivity : Activity() {
             contentDescription = "Back"
             setOnClickListener { up() }
         }
-        heading = label("Glint", 26f).apply {
+        heading = label("Inkwell", 26f).apply {
             setTypeface(typeface, Typeface.BOLD)
             maxLines = 1
             ellipsize = TextUtils.TruncateAt.MIDDLE
@@ -95,7 +95,7 @@ class MainActivity : Activity() {
     private fun refresh() {
         val level = stack.lastOrNull()
         upButton.visibility = if (level == null) View.GONE else View.VISIBLE
-        heading.text = level?.title ?: "Glint"
+        heading.text = level?.title ?: "Inkwell"
         updateBack()
         if (level == null) showHome() else showFolder(level)
     }
@@ -107,7 +107,7 @@ class MainActivity : Activity() {
         scroll.scrollTo(0, 0)
     }
 
-    /** Back goes up a folder before it leaves Glint. */
+    /** Back goes up a folder before it leaves Inkwell. */
     private fun updateBack() {
         if (Build.VERSION.SDK_INT < 33) return
         val registered = backCallback as? OnBackInvokedCallback
@@ -187,7 +187,7 @@ class MainActivity : Activity() {
             section("Folders")
             for (f in folders) {
                 row(f.name, onLongClick = {
-                    confirm("Remove the folder “${f.name}” from Glint? Nothing in it is deleted; Glint just stops being allowed to look in it.", "Remove") {
+                    confirm("Remove the folder “${f.name}” from Inkwell? Nothing in it is deleted; Inkwell just stops being allowed to look in it.", "Remove") {
                         library.removeFolder(f.uri)
                         refresh()
                     }
@@ -200,7 +200,7 @@ class MainActivity : Activity() {
         if (reading.isEmpty() && folders.isEmpty()) {
             list.addView(label(
                 "Open a picture or a comic book (.cbz), or add a folder of them.\n\n" +
-                    "Glint doesn't use the internet, and sees only the files and folders you choose.",
+                    "Inkwell doesn't use the internet, and sees only the files and folders you choose.",
                 15f, Ui.dim,
             ).apply { setPadding(dp(4), dp(24), dp(4), 0) })
         } else {
@@ -226,7 +226,7 @@ class MainActivity : Activity() {
                 if (ticket != shown || isDestroyed) return@runOnUiThread
                 list.removeAllViews()
                 when {
-                    docs == null -> list.addView(label("Glint can't look in this folder any more. Remove it and add it again.", 15f, Ui.dim).apply {
+                    docs == null -> list.addView(label("Inkwell can't look in this folder any more. Remove it and add it again.", 15f, Ui.dim).apply {
                         setPadding(dp(4), dp(16), dp(4), 0)
                     })
                     docs.isEmpty() -> list.addView(label("No pictures or comics here.", 15f, Ui.dim).apply {
@@ -285,7 +285,7 @@ class MainActivity : Activity() {
         startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), PICK_FOLDER)
     }
 
-    @Deprecated("The plain Activity way; Glint uses no AndroidX")
+    @Deprecated("The plain Activity way; Inkwell uses no AndroidX")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         @Suppress("DEPRECATION")
         super.onActivityResult(requestCode, resultCode, data)

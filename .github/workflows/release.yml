@@ -1,5 +1,5 @@
-# Every push to main that passes the tests publishes a ready-built Glint for
-# Android, signed with Glint's key, as the newest release.
+# Every push to main that passes the tests publishes a ready-built Inkwell for
+# Android, signed with Inkwell's key, as the newest release.
 name: Release
 
 on:
@@ -44,7 +44,7 @@ jobs:
           ./gradlew --no-daemon \
             -PversionCode="$(git rev-list --count "$GITHUB_SHA")" \
             -PversionName="0.1.0-$(echo "$GITHUB_SHA" | cut -c1-7)" \
-            testReleaseUnitTest assembleRelease
+            testDebugUnitTest assembleRelease
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -80,18 +80,18 @@ jobs:
           yes | "$sdk" --licenses >/dev/null || true
           "$sdk" --install "build-tools;36.0.0" >/dev/null
           tools="$ANDROID_HOME/build-tools/36.0.0"
-          APK=glint-android.apk
+          APK=inkwell-android.apk
           # The key exists only for this step, and is gone after it.
           key=$(mktemp)
           trap 'rm -f "$key"' EXIT
           printf '%s' "$ANDROID_KEYSTORE" | base64 -d >"$key"
-          GLINT_KS_PASS=$(printf '%s' "$ANDROID_KEYSTORE_PASSWORD" | tr -d '\r\n') "$tools/apksigner" sign \
-            --ks "$key" --ks-type PKCS12 --ks-key-alias glint --ks-pass env:GLINT_KS_PASS --key-pass env:GLINT_KS_PASS \
+          INKWELL_KS_PASS=$(printf '%s' "$ANDROID_KEYSTORE_PASSWORD" | tr -d '\r\n') "$tools/apksigner" sign \
+            --ks "$key" --ks-type PKCS12 --ks-key-alias inkwell --ks-pass env:INKWELL_KS_PASS --key-pass env:INKWELL_KS_PASS \
             --out "$APK" unsigned/app-release-unsigned.apk
           rm -f "$key"
-          # Signed with Glint's key, not some other one.
+          # Signed with Inkwell's key, not some other one.
           got=$("$tools/apksigner" verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')
-          [ "$got" = "$(cat android/release-cert.sha256)" ] || { echo "signed with $got, not Glint's key" >&2; exit 1; }
+          [ "$got" = "$(cat android/release-cert.sha256)" ] || { echo "signed with $got, not Inkwell's key" >&2; exit 1; }
           sha256sum "$APK" >"$APK.sha256"
 
       - name: Publish
@@ -101,6 +101,6 @@ jobs:
           set -eu
           short=$(echo "$GITHUB_SHA" | cut -c1-7)
           gh release create "build-$short" --target "$GITHUB_SHA" --latest \
-            --title "Glint $short" \
-            --notes "Glint for Android 8 and newer, any phone or tablet, built from $GITHUB_SHA. Signed with Glint's key; its certificate's SHA-256 is $(cat android/release-cert.sha256)." \
-            glint-android.apk glint-android.apk.sha256
+            --title "Inkwell $short" \
+            --notes "Inkwell for Android 8 and newer, any phone or tablet, built from $GITHUB_SHA. Signed with Inkwell's key; its certificate's SHA-256 is $(cat android/release-cert.sha256)." \
+            inkwell-android.apk inkwell-android.apk.sha256

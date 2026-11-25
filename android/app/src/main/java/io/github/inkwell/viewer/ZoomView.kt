@@ -1,4 +1,4 @@
-package io.github.glint.viewer
+package io.github.inkwell.viewer
 
 import android.animation.ValueAnimator
 import android.content.Context

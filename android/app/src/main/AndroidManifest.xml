@@ -1,16 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- No permissions at all: no internet, no storage. Glint sees only the
+<!-- No permissions at all: no internet, no storage. Inkwell sees only the
      files you hand it (Android's file picker, or "Open with" in another app). -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application
-        android:label="Glint"
+        android:label="Inkwell"
         android:icon="@mipmap/icon"
         android:roundIcon="@mipmap/icon"
         android:allowBackup="false"
         android:dataExtractionRules="@xml/no_backup"
         android:fullBackupContent="false"
         android:largeHeap="true"
-        android:theme="@style/Glint">
+        android:theme="@style/Inkwell">
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -23,7 +23,7 @@
         <activity
             android:name=".ViewerActivity"
             android:exported="true"
-            android:theme="@style/Glint.Viewer"
+            android:theme="@style/Inkwell.Viewer"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|uiMode|density">
             <!-- "Open with" from file managers, galleries and other apps. -->
             <intent-filter>
@@ -48,7 +48,7 @@
                 <data android:pathPattern=".*\\.cbz" />
                 <data android:pathPattern=".*\\.CBZ" />
             </intent-filter>
-            <!-- Share a picture to Glint. -->
+            <!-- Share a picture to Inkwell. -->
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />

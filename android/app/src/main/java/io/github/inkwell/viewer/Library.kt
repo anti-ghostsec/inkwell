@@ -1,4 +1,4 @@
-package io.github.glint.viewer
+package io.github.inkwell.viewer
 
 import android.content.Context
 import android.content.Intent
@@ -9,11 +9,11 @@ import org.json.JSONObject
 /** A comic you've read in, and where you got to. */
 class Reading(val uri: String, val name: String, val page: Int, val pages: Int, val time: Long)
 
-/** A folder you added (Android lets Glint read in it until you remove it). */
+/** A folder you added (Android lets Inkwell read in it until you remove it). */
 class Folder(val uri: String, val name: String)
 
 /**
- * What Glint keeps, on this phone only (never in backups: no_backup.xml):
+ * What Inkwell keeps, on this phone only (never in backups: no_backup.xml):
  * the comics you're reading and the page you were on, the folders you
  * added, and your choices.
  */

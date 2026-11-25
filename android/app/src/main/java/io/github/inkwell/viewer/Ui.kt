@@ -1,4 +1,4 @@
-package io.github.glint.viewer
+package io.github.inkwell.viewer
 
 import android.app.Activity
 import android.graphics.Color
@@ -12,7 +12,7 @@ import android.view.WindowManager
 import android.widget.Button
 import android.widget.TextView
 
-/** Glint's colours: dark, with an amber glint. */
+/** Inkwell's colours: dark, with amber ink. */
 object Ui {
     val background = Color.rgb(0x14, 0x14, 0x18)
     val card = Color.rgb(0x1f, 0x1f, 0x26)

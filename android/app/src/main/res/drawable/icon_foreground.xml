@@ -1,16 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- An inkwell in front of a written page, in the 108dp adaptive canvas
+     (what's kept on every phone's icon shape: 18 to 90). -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp" android:height="108dp"
     android:viewportWidth="108" android:viewportHeight="108">
-    <!-- A page, its corner turned. -->
+    <!-- The page, its corner turned, and its lines. -->
     <path android:fillColor="#FFECECF2"
-        android:pathData="M34,30 L66,30 L76,40 L76,80 L34,80 Z" />
+        android:pathData="M26,24 L58,24 L66,32 L66,72 L26,72 Z" />
     <path android:fillColor="#FFB8B8C4"
-        android:pathData="M66,30 L76,40 L66,40 Z" />
-    <!-- Hills on it. -->
-    <path android:fillColor="#FF3A6EA5"
-        android:pathData="M38,76 L50,58 L58,68 L63,62 L72,76 Z" />
-    <!-- The glint. -->
+        android:pathData="M58,24 L66,32 L58,32 Z" />
+    <path android:fillColor="#FF8A8A96"
+        android:pathData="M32,38 h20 v3 h-20 Z M32,46 h26 v3 h-26 Z M32,54 h14 v3 h-14 Z" />
+    <!-- The inkwell: its lip, neck and body. -->
+    <path android:fillColor="#FFB07818"
+        android:pathData="M55,44 h18 v4 h-18 Z M58,48 h12 v8 h-12 Z" />
     <path android:fillColor="#FFE0A030"
-        android:pathData="M48,34 Q49.5,44.5 60,46 Q49.5,47.5 48,58 Q46.5,47.5 36,46 Q46.5,44.5 48,34 Z" />
+        android:pathData="M54,56 h20 a6,6 0 0 1 6,6 v18 a6,6 0 0 1 -6,6 h-20 a6,6 0 0 1 -6,-6 v-18 a6,6 0 0 1 6,-6 Z" />
+    <!-- Light on the glass. -->
+    <path android:fillColor="#66FFFFFF"
+        android:pathData="M54,62 h4 v16 h-4 Z" />
 </vector>

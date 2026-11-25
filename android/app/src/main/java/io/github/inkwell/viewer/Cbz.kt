@@ -1,4 +1,4 @@
-package io.github.glint.viewer
+package io.github.inkwell.viewer
 
 import java.io.ByteArrayOutputStream
 import java.io.Closeable

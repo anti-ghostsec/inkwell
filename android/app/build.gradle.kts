@@ -3,13 +3,13 @@ plugins {
 }
 
 android {
-    namespace = "io.github.glint.viewer"
+    namespace = "io.github.inkwell.viewer"
     compileSdk {
         version = release(36)
     }
 
     defaultConfig {
-        applicationId = "io.github.glint.viewer"
+        applicationId = "io.github.inkwell.viewer"
         minSdk = 26
         targetSdk = 36
         // Each build must count higher than the one it updates: the release

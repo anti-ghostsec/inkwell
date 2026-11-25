@@ -1,4 +1,4 @@
-package io.github.glint.viewer
+package io.github.inkwell.viewer
 
 import android.content.ContentResolver
 import android.content.res.Resources

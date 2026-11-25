@@ -1,4 +1,4 @@
-package io.github.glint.viewer
+package io.github.inkwell.viewer
 
 /**
  * Names as people count: "page2" before "page10", capitals or not. Runs of

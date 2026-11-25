@@ -1,4 +1,4 @@
-package io.github.glint.viewer
+package io.github.inkwell.viewer
 
 import android.app.Activity
 import android.app.AlertDialog
@@ -21,10 +21,10 @@ import android.widget.PopupMenu
 import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
-import io.github.glint.viewer.Ui.applyPrivacy
-import io.github.glint.viewer.Ui.dp
-import io.github.glint.viewer.Ui.label
-import io.github.glint.viewer.Ui.onInsets
+import io.github.inkwell.viewer.Ui.applyPrivacy
+import io.github.inkwell.viewer.Ui.dp
+import io.github.inkwell.viewer.Ui.label
+import io.github.inkwell.viewer.Ui.onInsets
 import java.util.concurrent.Executors
 import kotlin.math.abs
 
@@ -181,7 +181,7 @@ class ViewerActivity : Activity(), ZoomView.Listener {
         }
     }
 
-    /** The bars (Glint's and Android's): shown, or out of the way of the picture. */
+    /** The bars (Inkwell's and Android's): shown, or out of the way of the picture. */
     private fun showBars(show: Boolean) {
         barsShown = show
         top.visibility = if (show) View.VISIBLE else View.GONE
@@ -252,12 +252,12 @@ class ViewerActivity : Activity(), ZoomView.Listener {
                         Files.isPicture(fileName, mime) -> FilePages(contentResolver, listOf(target to fileName))
                         else -> null
                     }
-                    if (found == null) error = "This isn't a picture, or a comic\nGlint can read (.cbz)"
+                    if (found == null) error = "This isn't a picture, or a comic\nInkwell can read (.cbz)"
                 } else {
                     found = FilePages(contentResolver, listOf(target to fileName))
                 }
             } catch (e: SecurityException) {
-                error = "Glint can't open this any more.\nOpen it again from where it's kept."
+                error = "Inkwell can't open this any more.\nOpen it again from where it's kept."
             } catch (e: Exception) {
                 error = "This couldn't be opened"
             }
@@ -323,7 +323,7 @@ class ViewerActivity : Activity(), ZoomView.Listener {
     private fun display(i: Int) {
         val picture = cache[i]
         if (picture == null) {
-            zoom.show(null, "Page ${i + 1} can't be shown:\nit's damaged, or not a picture Glint can read")
+            zoom.show(null, "Page ${i + 1} can't be shown:\nit's damaged, or not a picture Inkwell can read")
         } else {
             zoom.show(picture.drawable, fromBottom = showFromBottom)
         }
@@ -453,8 +453,8 @@ class ViewerActivity : Activity(), ZoomView.Listener {
 
     companion object {
         /** A folder you added, and the folder in it the picture is in. */
-        const val EXTRA_TREE = "io.github.glint.viewer.TREE"
-        const val EXTRA_FOLDER = "io.github.glint.viewer.FOLDER"
+        const val EXTRA_TREE = "io.github.inkwell.viewer.TREE"
+        const val EXTRA_FOLDER = "io.github.inkwell.viewer.FOLDER"
 
         private const val FIT_WIDTH = 1
         private const val RTL = 2
