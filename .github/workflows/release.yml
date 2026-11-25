@@ -1,0 +1,106 @@
+# Every push to main that passes the tests publishes a ready-built Glint for
+# Android, signed with Glint's key, as the newest release.
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Only the job that publishes may write to the repository.
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  # The build (Gradle and everything it downloads) never sees the signing
+  # key: it hands the unsigned APK to the next job, which signs and
+  # publishes it on a runner of its own and runs none of the build's code.
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # The version code counts commits.
+          fetch-depth: 0
+          persist-credentials: false
+
+      # gradle-wrapper.jar is the one Gradle publishes, not a changed copy.
+      - uses: gradle/actions/wrapper-validation@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+
+      - name: Test and build
+        working-directory: android
+        run: |
+          set -eu
+          export JAVA_HOME="$JAVA_HOME_21_X64" PATH="$JAVA_HOME_21_X64/bin:$PATH"
+          sdk="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$sdk" --licenses >/dev/null || true
+          "$sdk" --install "platforms;android-36" "build-tools;36.0.0" >/dev/null
+          ./gradlew --no-daemon \
+            -PversionCode="$(git rev-list --count "$GITHUB_SHA")" \
+            -PversionName="0.1.0-$(echo "$GITHUB_SHA" | cut -c1-7)" \
+            testReleaseUnitTest assembleRelease
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: unsigned
+          path: android/app/build/outputs/apk/release/app-release-unsigned.apk
+          if-no-files-found: error
+          retention-days: 1
+
+  sign:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: unsigned
+          path: unsigned
+
+      - name: Sign
+        env:
+          ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          set -eu
+          [ -n "$ANDROID_KEYSTORE" ] || { echo "ANDROID_KEYSTORE isn't set: no APK without a signature" >&2; exit 1; }
+          export PATH="$JAVA_HOME_21_X64/bin:$PATH"
+          sdk="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$sdk" --licenses >/dev/null || true
+          "$sdk" --install "build-tools;36.0.0" >/dev/null
+          tools="$ANDROID_HOME/build-tools/36.0.0"
+          APK=glint-android.apk
+          # The key exists only for this step, and is gone after it.
+          key=$(mktemp)
+          trap 'rm -f "$key"' EXIT
+          printf '%s' "$ANDROID_KEYSTORE" | base64 -d >"$key"
+          GLINT_KS_PASS=$(printf '%s' "$ANDROID_KEYSTORE_PASSWORD" | tr -d '\r\n') "$tools/apksigner" sign \
+            --ks "$key" --ks-type PKCS12 --ks-key-alias glint --ks-pass env:GLINT_KS_PASS --key-pass env:GLINT_KS_PASS \
+            --out "$APK" unsigned/app-release-unsigned.apk
+          rm -f "$key"
+          # Signed with Glint's key, not some other one.
+          got=$("$tools/apksigner" verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')
+          [ "$got" = "$(cat android/release-cert.sha256)" ] || { echo "signed with $got, not Glint's key" >&2; exit 1; }
+          sha256sum "$APK" >"$APK.sha256"
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          short=$(echo "$GITHUB_SHA" | cut -c1-7)
+          gh release create "build-$short" --target "$GITHUB_SHA" --latest \
+            --title "Glint $short" \
+            --notes "Glint for Android 8 and newer, any phone or tablet, built from $GITHUB_SHA. Signed with Glint's key; its certificate's SHA-256 is $(cat android/release-cert.sha256)." \
+            glint-android.apk glint-android.apk.sha256

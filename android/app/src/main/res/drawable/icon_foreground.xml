@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <!-- A page, its corner turned. -->
+    <path android:fillColor="#FFECECF2"
+        android:pathData="M34,30 L66,30 L76,40 L76,80 L34,80 Z" />
+    <path android:fillColor="#FFB8B8C4"
+        android:pathData="M66,30 L76,40 L66,40 Z" />
+    <!-- Hills on it. -->
+    <path android:fillColor="#FF3A6EA5"
+        android:pathData="M38,76 L50,58 L58,68 L63,62 L72,76 Z" />
+    <!-- The glint. -->
+    <path android:fillColor="#FFE0A030"
+        android:pathData="M48,34 Q49.5,44.5 60,46 Q49.5,47.5 48,58 Q46.5,47.5 36,46 Q46.5,44.5 48,34 Z" />
+</vector>

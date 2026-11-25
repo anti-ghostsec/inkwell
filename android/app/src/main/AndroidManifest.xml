@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- No permissions at all: no internet, no storage. Glint sees only the
+     files you hand it (Android's file picker, or "Open with" in another app). -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application
+        android:label="Glint"
+        android:icon="@mipmap/icon"
+        android:roundIcon="@mipmap/icon"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/no_backup"
+        android:fullBackupContent="false"
+        android:largeHeap="true"
+        android:theme="@style/Glint">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|uiMode|density">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <activity
+            android:name=".ViewerActivity"
+            android:exported="true"
+            android:theme="@style/Glint.Viewer"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboard|keyboardHidden|uiMode|density">
+            <!-- "Open with" from file managers, galleries and other apps. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:mimeType="image/*" />
+                <data android:mimeType="application/vnd.comicbook+zip" />
+                <data android:mimeType="application/x-cbz" />
+                <data android:mimeType="application/zip" />
+            </intent-filter>
+            <!-- Comics a file manager doesn't know the type of: by name. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:host="*" />
+                <data android:mimeType="application/octet-stream" />
+                <data android:pathPattern=".*\\.cbz" />
+                <data android:pathPattern=".*\\.CBZ" />
+            </intent-filter>
+            <!-- Share a picture to Glint. -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+                <data android:mimeType="application/vnd.comicbook+zip" />
+                <data android:mimeType="application/x-cbz" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>
