@@ -105,6 +105,8 @@ class ViewerActivity : Activity(), ZoomView.Listener, StripView.Listener, StripV
     private val main = Handler(Looper.getMainLooper())
     private var pages: Pages? = null
     private var uri: Uri? = null
+    /** Opened from Inkwell's own list: its page goes under Continue reading (from another app, only kept by fingerprint). */
+    private var inside = false
     private var name = ""
     private var index = 0
     private var rightToLeft = false
@@ -405,6 +407,7 @@ class ViewerActivity : Activity(), ZoomView.Listener, StripView.Listener, StripV
             return
         }
         uri = target
+        inside = intent.getBooleanExtra(EXTRA_INSIDE, false)
         zoom.show(null, "Opening…")
         val tree = intent.getStringExtra(EXTRA_TREE)?.let { Uri.parse(it) }
         val folder = intent.getStringExtra(EXTRA_FOLDER)
@@ -417,14 +420,8 @@ class ViewerActivity : Activity(), ZoomView.Listener, StripView.Listener, StripV
             val fileName = Files.name(this, target)
             try {
                 val mime = contentResolver.getType(target)
-                // A comic from another app: kept readable (for Continue reading), when that app allows it.
-                if (Files.isComic(fileName, mime) && library.memory.let { it == null || it == Library.Memory.LIST } && intent.flags and Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION != 0) {
-                    try {
-                        contentResolver.takePersistableUriPermission(target, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    } catch (e: SecurityException) {
-                        // Only while it's open, then.
-                    }
-                }
+                // A comic from another app isn't listed under Continue reading, so
+                // nothing keeps it readable after: its page is kept by fingerprint.
                 if (tree != null && folder != null && !Files.isComic(fileName, mime)) {
                     // A picture in a folder you added: the folder's other pictures either side.
                     val docs = Files.list(this, tree, folder).filter { it.isPicture }
@@ -468,6 +465,7 @@ class ViewerActivity : Activity(), ZoomView.Listener, StripView.Listener, StripV
                 if (elsewhere != null) {
                     library.moveReading(target.toString(), elsewhere.toString())
                     val again = Intent(Intent.ACTION_VIEW, elsewhere, this, ViewerActivity::class.java).putExtra(EXTRA_FOUND, true)
+                        .putExtra(EXTRA_INSIDE, inside)
                     setIntent(again)
                     open(again, -1)
                     return@runOnUiThread
@@ -576,7 +574,7 @@ class ViewerActivity : Activity(), ZoomView.Listener, StripView.Listener, StripV
         if (m != Library.Memory.LIST && here != null) library.forget(here.toString())
         if (p != null && p.isComic && here != null) {
             comicId()?.let { library.setPlace(it, index, rightToLeft) }
-            library.setReading(here.toString(), name, index, p.count)
+            if (inside) library.setReading(here.toString(), name, index, p.count)
         }
         toast(
             when (m) {
@@ -743,7 +741,7 @@ class ViewerActivity : Activity(), ZoomView.Listener, StripView.Listener, StripV
         if (barsShown) showBars(true)
         if (p.isComic) {
             comicId()?.let { library.setPlace(it, i) }
-            library.setReading(uri.toString(), name, i, p.count)
+            if (inside) library.setReading(uri.toString(), name, i, p.count)
         }
     }
 
@@ -1333,7 +1331,7 @@ class ViewerActivity : Activity(), ZoomView.Listener, StripView.Listener, StripV
                     // Only this time, then.
                 }
                 if (old != null) library.moveReading(old.toString(), found.toString())
-                val again = Intent(Intent.ACTION_VIEW, found, this, ViewerActivity::class.java)
+                val again = Intent(Intent.ACTION_VIEW, found, this, ViewerActivity::class.java).putExtra(EXTRA_INSIDE, inside)
                 setIntent(again)
                 open(again, -1)
             }
@@ -1373,6 +1371,9 @@ class ViewerActivity : Activity(), ZoomView.Listener, StripView.Listener, StripV
     companion object {
         /** A folder you added, and the folder in it the picture is in. */
         const val EXTRA_TREE = "io.github.inkwell.viewer.TREE"
+
+        /** Opened from Inkwell's own list (not another app's "Open with"): goes under Continue reading. */
+        const val EXTRA_INSIDE = "io.github.inkwell.viewer.INSIDE"
         const val EXTRA_FOLDER = "io.github.inkwell.viewer.FOLDER"
 
         /** Opened where [ViewerActivity.findInFolders] found it: not looked for again. */

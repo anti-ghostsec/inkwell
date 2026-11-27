@@ -28,6 +28,10 @@ import kotlin.math.roundToInt
  * otherwise it springs back, and a fling stops at the page's edge. Pinch
  * or double-tap to zoom (then drag up and down too).
  *
+ * Held sideways, each page is as wide as the screen instead (a comic's
+ * usual page shape, so most fill it exactly), read down by dragging up and
+ * down: the next page starts at its top, the one before at its bottom.
+ *
  * "Whole pages" instead: one page to a screen, whole, and a slide (however
  * short or slow) goes to the next one.
  *
@@ -84,6 +88,9 @@ class StripView(context: Context) : View(context) {
     private var ty = 0f
     private var current = -1
     private var aspectGuess = 0.68f
+
+    /** The comic's usual page shape (its first upright page): held sideways, that fits the width. */
+    private var fitAspect = 0f
     private var animator: ValueAnimator? = null
     private val scroller = OverScroller(context, DecelerateInterpolator())
     private var flingPage = 0
@@ -104,14 +111,24 @@ class StripView(context: Context) : View(context) {
         return if (p.width > 0 && p.height > 0) p.width.toFloat() / p.height else aspectGuess
     }
 
+    /** Held sideways (and not whole pages): pages fitted to the width. */
+    private val sideways get() = width > height && !wholePages
+
+    /** The strip's height unzoomed: the screen's, or held sideways, a usual page's at the screen's width. */
+    private fun baseHeight(): Float =
+        if (sideways) width / (if (fitAspect > 0f) fitAspect else aspectGuess) else height.toFloat()
+
     /** How wide page [i]'s place in the strip is, on screen. */
     private fun slot(i: Int): Float {
         if (width == 0 || height == 0) return 1f
-        val w = if (wholePages) width.toFloat() else height * aspect(i)
+        val w = if (wholePages) width.toFloat() else baseHeight() * aspect(i)
         return max(w * zoom, 1f)
     }
 
-    private val stripHeight get() = height * zoom
+    private val stripHeight get() = baseHeight() * zoom
+
+    /** The strip's top for the page's top ([top]) or its bottom. */
+    private fun edgeTy(top: Boolean) = if (top || stripHeight <= height) 0f else height - stripHeight
 
     // ---- where things are ----
 
@@ -271,30 +288,37 @@ class StripView(context: Context) : View(context) {
             if (o < r - 1f) {
                 glideToOffset(p, min(r, o + width * 0.9f))
             } else if (p < count - 1) {
-                glideToOffset(p + 1, 0f)
+                glideToOffset(p + 1, 0f, top = true)
             }
         } else {
             if (o > 1f) {
                 glideToOffset(p, max(0f, o - width * 0.9f))
             } else if (p > 0) {
-                glideToOffset(p - 1, room(p - 1))
+                glideToOffset(p - 1, room(p - 1), top = false)
             }
         }
     }
 
-    /** Glides to [o] pixels into page [p]. */
-    private fun glideToOffset(p: Int, o: Float) {
+    /**
+     * Glides to [o] pixels into page [p]; to that page's top or bottom too
+     * ([top]), on turning to it, when it's taller than the screen.
+     */
+    private fun glideToOffset(p: Int, o: Float, top: Boolean? = null) {
         stopMoving()
         val from = pos
+        val fromTy = ty
         placeAt(p, o)
         clampPos()
         val target = pos
+        val targetTy = top?.let { edgeTy(it) } ?: ty
         pos = from
         animator = ValueAnimator.ofFloat(0f, 1f).apply {
             duration = 260
             interpolator = DecelerateInterpolator()
             addUpdateListener {
-                pos = from + (target - from) * (it.animatedValue as Float)
+                val f = it.animatedValue as Float
+                pos = from + (target - from) * f
+                ty = fromTy + (targetTy - fromTy) * f
                 clampPos()
                 changed()
             }
@@ -315,6 +339,7 @@ class StripView(context: Context) : View(context) {
     fun pageChanged(i: Int) {
         source?.picture(i)?.let { p ->
             if (p.width > 0 && p.height > 0) aspectGuess = p.width.toFloat() / p.height
+            if (fitAspect == 0f && p.width > 0 && p.height > p.width) fitAspect = p.width.toFloat() / p.height
             (p.drawable as? Animatable)?.let { a ->
                 p.drawable.callback = this
                 if (started.add(p.drawable)) a.start()
@@ -327,6 +352,7 @@ class StripView(context: Context) : View(context) {
     /** The list changed: start again at [i]. */
     fun reset(i: Int) {
         started.clear()
+        fitAspect = 0f
         zoom = 1f
         current = -1
         jumpTo(i)
@@ -343,6 +369,8 @@ class StripView(context: Context) : View(context) {
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
+        // Turned the other way: the page from its top.
+        if ((w > h) != (oldw > oldh)) ty = 0f
         clampPos()
         current = -1
         changed()
@@ -498,7 +526,7 @@ class StripView(context: Context) : View(context) {
                 dragRaw += along(dx)
                 placeAt(homePage, damp(dragRaw, room(homePage)))
             }
-            if (zoom > 1f) ty -= dy
+            if (stripHeight > height) ty -= dy
             clampPos()
             changed()
             return true
@@ -529,8 +557,8 @@ class StripView(context: Context) : View(context) {
             val nudge = width * FLICK_PAST
             when {
                 // Pushed a little past the edge, then flicked on: the next page.
-                d > r + nudge && v > flingSpeed && p < count - 1 -> { glideToOffset(p + 1, 0f); flung = true; return true }
-                d < -nudge && v < -flingSpeed && p > 0 -> { glideToOffset(p - 1, room(p - 1)); flung = true; return true }
+                d > r + nudge && v > flingSpeed && p < count - 1 -> { glideToOffset(p + 1, 0f, top = true); flung = true; return true }
+                d < -nudge && v < -flingSpeed && p > 0 -> { glideToOffset(p - 1, room(p - 1), top = false); flung = true; return true }
                 // Past the edge but not far enough: back.
                 d < 0f || d > r -> { settle(); flung = true; return true }
             }
@@ -538,7 +566,7 @@ class StripView(context: Context) : View(context) {
             flinging = true
             val sh = stripHeight
             val minY = if (sh > height) (height - sh).toInt() else ty.toInt()
-            scroller.fling(d.toInt(), ty.toInt(), v.toInt(), if (zoom > 1f) vy.toInt() else 0,
+            scroller.fling(d.toInt(), ty.toInt(), v.toInt(), if (sh > height) vy.toInt() else 0,
                 0, r.toInt(), minY, if (sh > height) 0 else ty.toInt())
             postInvalidateOnAnimation()
             flung = true
@@ -564,8 +592,8 @@ class StripView(context: Context) : View(context) {
             val d = damp(dragRaw, r)
             val turn = width * PUSH_PAST
             when {
-                d > r + turn && p < count - 1 -> glideToOffset(p + 1, 0f)
-                d < -turn && p > 0 -> glideToOffset(p - 1, room(p - 1))
+                d > r + turn && p < count - 1 -> glideToOffset(p + 1, 0f, top = true)
+                d < -turn && p > 0 -> glideToOffset(p - 1, room(p - 1), top = false)
                 d < 0f || d > r -> glideToOffset(p, d.coerceIn(0f, r))
                 else -> invalidate()
             }

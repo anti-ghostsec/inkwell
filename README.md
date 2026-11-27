@@ -18,14 +18,15 @@ and it reads comics the same way.
     of the comic, made from what's in it and scrambled with a key made on
     this phone. No names, no addresses, no dates. Open the comic again,
     from anywhere, renamed or moved, and it's at your page.
-  - *And list*: also lists your comics under *Continue reading* (this
-    keeps their names and where they are).
+  - *And list*: also lists the comics you open in Inkwell under *Continue
+    reading* (this keeps their names and where they are). One opened from
+    another app (a file manager's "Open with") still opens at your page,
+    but isn't listed: only its fingerprint is kept.
   - *Nothing*: nothing is kept; choosing it forgets everything kept.
 
-  A listed comic opened from another
-  app's "Open with" may be one Android lets Inkwell see only that once:
-  then Inkwell finds it in the folders you added, or asks you to find it
-  again (and keeps it from then on).
+  A listed comic whose file Android no longer lets Inkwell see is found
+  in the folders you added, or Inkwell asks you to find it again (and
+  keeps it from then on).
 - **Pictures:** PNG, JPEG, WebP, GIF, BMP, HEIF and AVIF (as your Android
   version supports them). On Android 9 and newer, animated GIFs and WebPs move
   and photos turn the right way up. Very large photos are shown at a size
@@ -55,7 +56,9 @@ and it reads comics the same way.
   Android has no Recycle Bin for, it asks before deleting for good.
 - **Reading:**
   - Pages sit side by side, each as tall as the screen: slide sideways
-    across a page freely. At its edge the page holds back: push on past a
+    across a page freely. Held sideways, each is as wide as the screen
+    instead: drag up and down to read down it (the next page starts at
+    its top). At its edge the page holds back: push on past a
     point (or a little, then flick) for the next page; less, and it springs
     back. A fling stops at the page's edge.
   - Tap anywhere to show or hide the bars: the page slider, and Edit,

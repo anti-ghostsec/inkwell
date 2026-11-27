@@ -460,7 +460,9 @@ class MainActivity : Activity() {
     }
 
     private fun view(uri: Uri, inFolder: Level? = null) {
+        // Opened from Inkwell itself: it may go under Continue reading.
         val intent = Intent(this, ViewerActivity::class.java).setAction(Intent.ACTION_VIEW).setData(uri)
+            .putExtra(ViewerActivity.EXTRA_INSIDE, true)
         if (inFolder != null) {
             intent.putExtra(ViewerActivity.EXTRA_TREE, inFolder.tree.toString())
             intent.putExtra(ViewerActivity.EXTRA_FOLDER, inFolder.id)
