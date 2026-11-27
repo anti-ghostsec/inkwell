@@ -56,9 +56,10 @@ and it reads comics the same way.
   Android has no Recycle Bin for, it asks before deleting for good.
 - **Reading:**
   - Pages sit side by side, each as tall as the screen: slide sideways
-    across a page freely. Held sideways, each is as wide as the screen
-    instead: drag up and down to read down it (the next page starts at
-    its top). At its edge the page holds back: push on past a
+    across a page freely. Held sideways, they sit one under the other
+    instead, each as wide as the screen: slide up to read down, a fling
+    rolls on, and the next page comes the same way, holding back at each
+    page's end. At its edge the page holds back: push on past a
     point (or a little, then flick) for the next page; less, and it springs
     back. A fling stops at the page's edge.
   - Tap anywhere to show or hide the bars: the page slider, and Edit,
